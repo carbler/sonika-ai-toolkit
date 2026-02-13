@@ -23,5 +23,7 @@ src/sonika_ai_toolkit.egg-info/
 *.egg
 .DS_Store
 EOL
+test/
+test_ultimate/
 /myvenv/
 /test_ultimate/reports/*
