@@ -17,6 +17,8 @@ sdist/
 var/
 wheels/
 *.egg-info/
+src/sonika_langchain_bot.egg-info/
+src/sonika_ai_toolkit.egg-info/
 .installed.cfg
 *.egg
 .DS_Store
