@@ -25,5 +25,6 @@ src/sonika_ai_toolkit.egg-info/
 EOL
 test/
 test_ultimate/
+.agents/
 /myvenv/
 /test_ultimate/reports/*
