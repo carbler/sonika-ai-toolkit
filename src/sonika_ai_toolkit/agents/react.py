@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_community.callbacks.manager import get_openai_callback
 
-from sonika_langchain_bot.langchain_class import ILanguageModel, Message
+from sonika_ai_toolkit.utilities.types import ILanguageModel, Message
 
 
 # ============= STATE DEFINITION =============
@@ -140,7 +140,7 @@ class _InternalToolLogger(BaseCallbackHandler):
 
 # ============= MAIN BOT CLASS =============
 
-class LangChainBot:
+class ReactBot:
     """
     Modern LangGraph-based conversational bot with MCP support.
     

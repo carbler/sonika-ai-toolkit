@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="sonika-langchain-bot",
-    version="0.0.61",
-    description="Agente langchain con LLM",
+    name="sonika-ai-toolkit",
+    version="0.1.0",
+    description="Toolkit para creación de agentes de IA y procesamiento de documentos",
     author="Erley Blanco Carvajal",
     license="MIT License",
     long_description=open("README.md", encoding="utf-8").read(),

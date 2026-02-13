@@ -1,11 +1,11 @@
-# Sonika LangChain Bot <a href="https://pepy.tech/projects/sonika-langchain-bot"><img src="https://static.pepy.tech/badge/sonika-langchain-bot" alt="PyPI Downloads"></a>
+# Sonika AI Toolkit <a href="https://pepy.tech/projects/sonika-ai-toolkit"><img src="https://static.pepy.tech/badge/sonika-ai-toolkit" alt="PyPI Downloads"></a>
 
-A Python library that implements a conversational agent using LangChain with tool execution capabilities and text classification.
+A robust Python library designed to build state-of-the-art conversational agents and AI tools. It leverages `LangChain` and `LangGraph` to create autonomous bots capable of complex reasoning and tool execution.
 
 ## Installation
 
 ```bash
-pip install sonika-langchain-bot
+pip install sonika-ai-toolkit
 ```
 
 ## Prerequisites
@@ -29,127 +29,88 @@ AWS_REGION=us-east-1
 
 ## Key Features
 
-- **Multi-Model Support**: Seamlessly switch between OpenAI, DeepSeek, Google Gemini, and Amazon Bedrock models.
-- **Conversational Agent**: Robust agent (`LangChainBot`) with native tool execution capabilities.
+- **Multi-Model Support**: Agnostic integration with OpenAI, DeepSeek, Google Gemini, and Amazon Bedrock.
+- **Conversational Agent**: Robust agent (`ReactBot`) with native tool execution capabilities and LangGraph state management.
+- **Tasker Agent**: Advanced planner-executor agent (`TaskerBot`) for complex multi-step tasks.
 - **Structured Classification**: Text classification with strongly typed outputs.
+- **Document Processing**: Utilities for processing PDFs, DOCX, and other formats with intelligent chunking.
 - **Custom Tools**: Easy integration of custom tools via Pydantic and LangChain.
-- **History Management**: Built-in conversation history tracking.
 
 ## Basic Usage
 
-### Agent with Tools Example
+### Conversational Agent with Tools
 
 ```python
 import os
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings
-from sonika_langchain_bot.langchain_tools import EmailTool
-from sonika_langchain_bot.langchain_bot_agent import LangChainBot
-from sonika_langchain_bot.langchain_class import Message, ResponseModel
-from sonika_langchain_bot.langchain_models import OpenAILanguageModel, DeepSeekLanguageModel, GeminiLanguageModel
+from sonika_ai_toolkit.tools.integrations import EmailTool
+from sonika_ai_toolkit.agents.react import ReactBot
+from sonika_ai_toolkit.utilities.types import Message
+from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 
 # Load environment variables
 load_dotenv()
 
-# Example 1: Using OpenAI
-# api_key = os.getenv("OPENAI_API_KEY")
-# language_model = OpenAILanguageModel(api_key, model_name='gpt-4o-mini', temperature=1)
-
-# Example 2: Using Gemini
-# api_key = os.getenv("GOOGLE_API_KEY")
-# language_model = GeminiLanguageModel(api_key, model_name='gemini-3-flash-preview', temperature=1)
-
-# Example 3: Using Bedrock
-api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
-language_model = BedrockLanguageModel(api_key, region_name="us-east-1", model_name='amazon.nova-micro-v1:0', temperature=1)
+# Configure model
+api_key = os.getenv("OPENAI_API_KEY")
+language_model = OpenAILanguageModel(api_key, model_name='gpt-4o-mini', temperature=0.7)
 
 # Configure tools
 tools = [EmailTool()]
 
 # Create agent instance
-bot = LangChainBot(language_model, instructions="You are an agent", tools=tools)
-
-# Load conversation history
-bot.load_conversation_history([Message(content="My name is Erley", is_bot=False)])
+bot = ReactBot(language_model, instructions="You are a helpful assistant", tools=tools)
 
 # Get response
-user_message = 'Send an email with the tool to erley@gmail.com with subject Hello and message Hello Erley'
-response_model: ResponseModel = bot.get_response(user_message)
+user_message = 'Send an email to erley@gmail.com saying hello'
+messages = [Message(content="My name is Erley", is_bot=False)]
+response = bot.get_response(user_message, messages, logs=[])
 
-print(response_model)
+print(response["content"])
 ```
 
-### Text Classification Example
+### Text Classification
 
 ```python
 import os
-from dotenv import load_dotenv
-from sonika_langchain_bot.langchain_clasificator import TextClassifier
-from sonika_langchain_bot.langchain_models import OpenAILanguageModel
+from sonika_ai_toolkit.classifiers.text import TextClassifier
+from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 from pydantic import BaseModel, Field
 
-# Load environment variables
-load_dotenv()
-
-# Define classification structure with Pydantic
+# Define classification structure
 class Classification(BaseModel):
     intention: str = Field()
     sentiment: str = Field(..., enum=["happy", "neutral", "sad", "excited"])
-    aggressiveness: int = Field(
-        ...,
-        description="describes how aggressive the statement is, the higher the number the more aggressive",
-        enum=[1, 2, 3, 4, 5],
-    )
-    language: str = Field(
-        ..., enum=["spanish", "english", "french", "german", "italian"]
-    )
 
 # Initialize classifier
-api_key = os.getenv("OPENAI_API_KEY")
-model = OpenAILanguageModel(api_key=api_key)
+model = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"))
 classifier = TextClassifier(llm=model, validation_class=Classification)
 
 # Classify text
-result = classifier.classify("how are you?")
-print(result)
+result = classifier.classify("I am very happy today!")
+print(result.result)
 ```
 
-## Available Classes and Components
+## Available Components
 
-### Core Classes
+### Agents
+- **ReactBot**: Standard agent using LangGraph workflow.
+- **TaskerBot**: Advanced planner agent for multi-step tasks.
 
-- **LangChainBot**: Main conversational agent for task execution with tools
-- **OpenAILanguageModel**: Wrapper for OpenAI language models
-- **DeepSeekLanguageModel**: Wrapper for DeepSeek language models
-- **GeminiLanguageModel**: Wrapper for Google Gemini models
-- **BedrockLanguageModel**: Wrapper for Amazon Bedrock models
-- **TextClassifier**: Text classification using structured output
-- **Message**: Message structure for conversation history
-- **ResponseModel**: Response structure from agent interactions
-
-### Tools
-
-- **EmailTool**: Tool for sending emails through the agent
+### Utilities
+- **ILanguageModel**: Unified interface for LLM providers.
+- **DocumentProcessor**: Text extraction and chunking utilities.
 
 ## Project Structure
 
 ```
-your_project/
-├── .env                    # Environment variables
-├── src/
-│   └── sonika_langchain_bot/
-│       ├── langchain_bot_agent.py
-│       ├── langchain_clasificator.py
-│       ├── langchain_class.py
-│       ├── langchain_models.py
-│       └── langchain_tools.py
-└── tests/
-    └── test_bot.py
+src/sonika_ai_toolkit/
+├── agents/             # Bot implementations
+├── classifiers/        # Text classification tools
+├── document_processing/# PDF and document tools
+├── tools/             # Tool definitions
+└── utilities/         # Models and common types
 ```
-
-## Contributing
-
-Contributions are welcome. Please open an issue to discuss major changes you'd like to make.
 
 ## License
 

@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
-from sonika_langchain_bot.document_processor import DocumentProcessor
+from sonika_ai_toolkit.document_processing.processor import DocumentProcessor
 
 def create_test_files():
     """Crea archivos de prueba si no existen"""

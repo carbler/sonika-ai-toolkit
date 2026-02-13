@@ -2,7 +2,7 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_aws import ChatBedrock
-from sonika_langchain_bot.langchain_class import ILanguageModel
+from sonika_ai_toolkit.utilities.types import ILanguageModel
 from langchain_core.messages import HumanMessage
 from typing import Generator
 

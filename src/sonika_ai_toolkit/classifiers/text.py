@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Dict, Any, Type
-from sonika_langchain_bot.langchain_class import ILanguageModel
+from sonika_ai_toolkit.utilities.types import ILanguageModel
 
 class ClassificationResponse(BaseModel):
     """Respuesta de clasificación con tokens utilizados"""

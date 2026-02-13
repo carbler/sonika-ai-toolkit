@@ -9,10 +9,10 @@ import json
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Solo importamos TaskerBot y las herramientas necesarias
-from sonika_langchain_bot.tasker.tasker_bot import TaskerBot
-from sonika_langchain_bot.langchain_tools import EmailTool, SaveContacto
-from sonika_langchain_bot.langchain_class import Message, ResponseModel
-from sonika_langchain_bot.langchain_models import OpenAILanguageModel
+from sonika_ai_toolkit.agents.tasker.tasker_bot import TaskerBot
+from sonika_ai_toolkit.tools.integrations import EmailTool, SaveContacto
+from sonika_ai_toolkit.utilities.types import Message, ResponseModel
+from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
 load_dotenv(env_path)

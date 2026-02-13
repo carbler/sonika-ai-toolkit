@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 # Ajustar para importar desde src
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from sonika_langchain_bot.langchain_models import OpenAILanguageModel, DeepSeekLanguageModel, GeminiLanguageModel, BedrockLanguageModel
-from sonika_langchain_bot.langchain_bot_agent import Message
+from sonika_ai_toolkit.utilities.models import OpenAILanguageModel, DeepSeekLanguageModel, GeminiLanguageModel, BedrockLanguageModel
+from sonika_ai_toolkit.utilities.types import Message
 
 # Importar componentes locales
 from tools import (
@@ -31,13 +31,13 @@ load_dotenv()
 AVAILABLE_BOTS = {
     "5": {
         "name": "TaskerBot",
-        "module": "sonika_langchain_bot.tasker",
+        "module": "sonika_ai_toolkit.agents.tasker.tasker_bot",
         "class": "TaskerBot"
     },
     "6": {
-        "name": "LangChainBot",
-        "module": "sonika_langchain_bot.langchain_bot_agent",
-        "class": "LangChainBot"
+        "name": "ReactBot",
+        "module": "sonika_ai_toolkit.agents.react",
+        "class": "ReactBot"
     }
 }
 
@@ -137,8 +137,8 @@ class UltimateStressTestRunner:
             ]
 
             # Instanciación dinámica
-            if self.bot_name == "LangChainBot":
-                # Adaptador para LangChainBot que espera 'instructions' concatenadas
+            if self.bot_name == "ReactBot":
+                # Adaptador para ReactBot que espera 'instructions' concatenadas
                 combined_instructions = f"{FUNCTION_PURPOSE}\n\n{PERSONALITY_TONE}\n\n{LIMITATIONS}"
                 bot = self.bot_class(
                     language_model=self.llm,

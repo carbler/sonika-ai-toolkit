@@ -8,12 +8,12 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langchain_community.callbacks.manager import get_openai_callback
 
-from sonika_langchain_bot.tasker.state import ChatState
-from sonika_langchain_bot.tasker.nodes.planner_node import PlannerNode
-from sonika_langchain_bot.tasker.nodes.executor_node import ExecutorNode
-from sonika_langchain_bot.tasker.nodes.output_node import OutputNode
-from sonika_langchain_bot.tasker.nodes.logger_node import LoggerNode
-from sonika_langchain_bot.tasker.nodes.validator_node import ValidatorNode
+from sonika_ai_toolkit.agents.tasker.state import ChatState
+from sonika_ai_toolkit.agents.tasker.nodes.planner_node import PlannerNode
+from sonika_ai_toolkit.agents.tasker.nodes.executor_node import ExecutorNode
+from sonika_ai_toolkit.agents.tasker.nodes.output_node import OutputNode
+from sonika_ai_toolkit.agents.tasker.nodes.logger_node import LoggerNode
+from sonika_ai_toolkit.agents.tasker.nodes.validator_node import ValidatorNode
 
 
 class TaskerBot:

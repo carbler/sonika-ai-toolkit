@@ -1,7 +1,7 @@
 """Logger Node - Tracks and logs events."""
 
 from typing import Dict, Any, Optional, Callable
-from sonika_langchain_bot.tasker.nodes.base_node import BaseNode
+from sonika_ai_toolkit.agents.tasker.nodes.base_node import BaseNode
 
 class LoggerNode(BaseNode):
     """Logs events and generates audit trail."""

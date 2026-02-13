@@ -3,7 +3,7 @@
 from typing import Dict, Any, Optional, Callable, List
 import os
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
-from sonika_langchain_bot.tasker.nodes.base_node import BaseNode
+from sonika_ai_toolkit.agents.tasker.nodes.base_node import BaseNode
 
 class PlannerNode(BaseNode):
     """

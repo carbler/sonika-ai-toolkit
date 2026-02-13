@@ -1,2 +1,2 @@
-recursive-include src/sonika_langchain_bot/tasker/prompts *.txt
-recursive-include src/sonika_langchain_bot/orchestrator/prompts *.txt
+recursive-include src/sonika_ai_toolkit/agents/tasker/prompts *.txt
+recursive-include src/sonika_ai_toolkit/orchestrator/prompts *.txt

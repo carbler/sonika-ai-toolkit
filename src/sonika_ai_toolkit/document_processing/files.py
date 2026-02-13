@@ -1,5 +1,5 @@
 from langchain_community.document_loaders import PyPDFLoader
-from sonika_langchain_bot.langchain_class import FileProcessorInterface
+from sonika_ai_toolkit.utilities.types import FileProcessorInterface
 
 
 class PDFProcessor(FileProcessorInterface):

@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, Callable, List
 import json
 import asyncio
 from langchain_core.messages import ToolMessage
-from sonika_langchain_bot.tasker.nodes.base_node import BaseNode
+from sonika_ai_toolkit.agents.tasker.nodes.base_node import BaseNode
 
 
 class ExecutorNode(BaseNode):

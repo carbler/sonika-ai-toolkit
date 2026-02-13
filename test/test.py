@@ -7,11 +7,11 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
-from sonika_langchain_bot.langchain_tools import EmailTool,SaveContacto
-from sonika_langchain_bot.langchain_bot_agent import LangChainBot
-from sonika_langchain_bot.langchain_clasificator import  TextClassifier
-from sonika_langchain_bot.langchain_class import Message, ResponseModel
-from sonika_langchain_bot.langchain_models import OpenAILanguageModel, DeepSeekLanguageModel, GeminiLanguageModel, BedrockLanguageModel
+from sonika_ai_toolkit.tools.integrations import EmailTool,SaveContacto
+from sonika_ai_toolkit.agents.react import ReactBot
+from sonika_ai_toolkit.classifiers.text import  TextClassifier
+from sonika_ai_toolkit.utilities.types import Message, ResponseModel
+from sonika_ai_toolkit.utilities.models import OpenAILanguageModel, DeepSeekLanguageModel, GeminiLanguageModel, BedrockLanguageModel
 from pydantic import BaseModel, Field
 import json
 
@@ -54,7 +54,7 @@ def bot_bdi():
     embeddings = OpenAIEmbeddings(api_key=api_key)
 
     tools = [EmailTool(), SaveContacto()]
-    bot = LangChainBot(
+    bot = ReactBot(
         language_model, 
         instructions="Eres un agente",
         tools=tools,
@@ -92,7 +92,7 @@ def bot_bdi_deepseek():
     language_model = DeepSeekLanguageModel(api_key, model_name='deepseek-chat', temperature=1)
 
     tools = [EmailTool(), SaveContacto()]
-    bot = LangChainBot(
+    bot = ReactBot(
         language_model,
         instructions="Eres un agente",
         tools=tools,
@@ -127,7 +127,7 @@ def bot_bdi_gemini():
     language_model = GeminiLanguageModel(api_key, model_name='gemini-3-flash-preview', temperature=1)
 
     tools = [EmailTool(), SaveContacto()]
-    bot = LangChainBot(
+    bot = ReactBot(
         language_model,
         instructions="Eres un agente",
         tools=tools,
@@ -169,7 +169,7 @@ def bot_bdi_bedrock():
     )
 
     tools = [EmailTool(), SaveContacto()]
-    bot = LangChainBot(
+    bot = ReactBot(
         language_model,
         instructions="Eres un agente",
         tools=tools,
@@ -204,7 +204,7 @@ def bot_bdi_streaming():
     
     # Configuración de herramientas y bots    
     tools =[]
-    bot = LangChainBot(language_model, embeddings, instructions="Only answers in english", tools=tools)
+    bot = ReactBot(language_model, embeddings, instructions="Only answers in english", tools=tools)
 
     user_message = 'Hola como me llamo?'
 
@@ -234,10 +234,10 @@ def clasification():
     result = classifier.classify("how are you?")
     print(result)
 
-#bot_bdi()
+bot_bdi()
 #bot_mutinodo()
 #bot_bdi_streaming()
 #clasification()
 #bot_bdi_deepseek()
 #bot_bdi_gemini()
-bot_bdi_bedrock()
+#bot_bdi_bedrock()
