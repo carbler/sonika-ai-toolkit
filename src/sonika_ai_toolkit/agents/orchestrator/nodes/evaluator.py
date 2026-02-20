@@ -28,10 +28,19 @@ def _accumulate(current: str, new: Optional[str]) -> str:
 class EvaluatorNode:
     """Uses fast_model to evaluate whether a step succeeded and if the goal is complete."""
 
-    def __init__(self, fast_model, on_thinking: Optional[Callable[[str], None]] = None, logger=None):
+    def __init__(
+        self,
+        fast_model,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        logger=None,
+        prompt_template: str = EVALUATOR_PROMPT,
+        core_prompt: str = PROMPT_A,
+    ):
         self.fast_model = fast_model
         self.on_thinking = on_thinking
         self.logger = logger or logging.getLogger(__name__)
+        self.prompt_template = prompt_template
+        self.core_prompt = core_prompt
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         plan = list(state.get("plan", []))
@@ -42,8 +51,8 @@ class EvaluatorNode:
         last_error = state.get("last_error") or ""
         tool_output = last_result or last_error or "(no output)"
 
-        prompt = EVALUATOR_PROMPT.format(
-            prompt_a=PROMPT_A,
+        prompt = self.prompt_template.format(
+            prompt_a=self.core_prompt,
             goal=goal,
             step_description=step.get("description", ""),
             tool_output=tool_output,

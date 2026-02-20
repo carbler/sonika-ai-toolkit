@@ -1,5 +1,7 @@
 """Prompt templates for OrchestratorBot."""
 
+from dataclasses import dataclass, field
+
 # ── PROMPT_A — Core orchestration rules injected into every node ───────────
 PROMPT_A = """You are an autonomous AI orchestrator. Your job is to decompose goals into steps,
 execute each step using available tools, evaluate results, and produce a final report.
@@ -140,3 +142,53 @@ Write exactly 2 bullet points (one per line, starting with "- ") summarizing:
 
 Output ONLY the 2 bullet points, nothing else.
 """
+
+
+# ── Injectable prompt configuration ────────────────────────────────────────
+
+@dataclass
+class OrchestratorPrompts:
+    """Injectable prompt templates for OrchestratorBot.
+
+    All fields default to the built-in templates above.  Override any field to
+    change the behaviour of that specific stage without touching the rest.
+
+    Fields:
+        core        — Base rules injected as {prompt_a} into every other template.
+        planner     — Strong model: decompose the goal into a JSON step plan.
+        evaluator   — Fast model: judge step success and goal completion.
+        retry       — Fast model: decide recovery strategy after a failure.
+        reporter    — Fast model: write the final report.
+        save_memory — Fast model: summarise the session for persistent memory.
+
+    Example — custom domain persona::
+
+        from sonika_ai_toolkit.agents.orchestrator.prompts import OrchestratorPrompts
+
+        prompts = OrchestratorPrompts(
+            core="You are a financial compliance bot. Never approve transfers > $10k.",
+        )
+        bot = OrchestratorBot(..., prompts=prompts)
+
+    Example — fully custom planner::
+
+        prompts = OrchestratorPrompts(
+            planner=\"\"\"{prompt_a}
+
+            ## Tools
+            {tool_descriptions}
+
+            ## Objective
+            {goal}
+
+            Return ONLY JSON: {{"steps": [...]}}.
+            \"\"\",
+        )
+    """
+
+    core: str = field(default_factory=lambda: PROMPT_A)
+    planner: str = field(default_factory=lambda: PLANNER_PROMPT)
+    evaluator: str = field(default_factory=lambda: EVALUATOR_PROMPT)
+    retry: str = field(default_factory=lambda: RETRY_PROMPT)
+    reporter: str = field(default_factory=lambda: REPORTER_PROMPT)
+    save_memory: str = field(default_factory=lambda: SAVE_MEMORY_PROMPT)

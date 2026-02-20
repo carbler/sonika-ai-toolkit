@@ -13,6 +13,7 @@ from sonika_ai_toolkit.tools.registry import ToolRegistry
 from sonika_ai_toolkit.tools.synthesizer import DynamicToolSynthesizer
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
+from sonika_ai_toolkit.agents.orchestrator.prompts import OrchestratorPrompts
 from sonika_ai_toolkit.agents.orchestrator.nodes.load_memory import LoadMemoryNode
 from sonika_ai_toolkit.agents.orchestrator.nodes.planner import PlannerNode
 from sonika_ai_toolkit.agents.orchestrator.nodes.step_dispatcher import StepDispatcherNode
@@ -53,6 +54,7 @@ class OrchestratorBot:
         on_plan_generated: Optional[Callable[[List], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
         logger: Optional[logging.Logger] = None,
+        prompts: Optional[OrchestratorPrompts] = None,
     ):
         self.strong_model = strong_model
         self.fast_model = fast_model
@@ -65,6 +67,7 @@ class OrchestratorBot:
         self.on_step_end = on_step_end
         self.on_plan_generated = on_plan_generated
         self.on_thinking = on_thinking
+        self.prompts = prompts or OrchestratorPrompts()
 
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -181,6 +184,8 @@ class OrchestratorBot:
             on_plan_generated=self.on_plan_generated,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.planner,
+            core_prompt=self.prompts.core,
         )
         step_dispatcher = StepDispatcherNode(
             tool_registry=self.registry,
@@ -205,24 +210,41 @@ class OrchestratorBot:
             fast_model=self.fast_model,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.evaluator,
+            core_prompt=self.prompts.core,
         )
         retry = RetryNode(
             fast_model=self.fast_model,
             tool_registry=self.registry,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.retry,
+            core_prompt=self.prompts.core,
         )
         escalate = EscalateNode(logger=self.logger)
         reporter = ReporterNode(
             fast_model=self.fast_model,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.reporter,
+            core_prompt=self.prompts.core,
         )
         save_memory = SaveMemoryNode(
             fast_model=self.fast_model,
             memory_manager=self.memory_manager,
             logger=self.logger,
+            prompt_template=self.prompts.save_memory,
+            core_prompt=self.prompts.core,
         )
+
+        # Keep references for introspection (e.g., tests, debugging)
+        self._nodes = {
+            "planner": planner,
+            "evaluator": evaluator,
+            "retry": retry,
+            "reporter": reporter,
+            "save_memory": save_memory,
+        }
 
         workflow = StateGraph(OrchestratorState)
         workflow.add_node("load_memory", load_memory)

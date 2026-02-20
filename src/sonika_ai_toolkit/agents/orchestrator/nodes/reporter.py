@@ -37,18 +37,27 @@ def _tool_outputs_summary(outputs: List[Dict]) -> str:
 class ReporterNode:
     """Generates the final_report using fast_model."""
 
-    def __init__(self, fast_model, on_thinking=None, logger=None):
+    def __init__(
+        self,
+        fast_model,
+        on_thinking=None,
+        logger=None,
+        prompt_template: str = REPORTER_PROMPT,
+        core_prompt: str = PROMPT_A,
+    ):
         self.fast_model = fast_model
         self.on_thinking = on_thinking
         self.logger = logger or logging.getLogger(__name__)
+        self.prompt_template = prompt_template
+        self.core_prompt = core_prompt
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         plan = state.get("plan", [])
         tool_outputs = state.get("tool_outputs", [])
         goal = state.get("goal", "")
 
-        prompt = REPORTER_PROMPT.format(
-            prompt_a=PROMPT_A,
+        prompt = self.prompt_template.format(
+            prompt_a=self.core_prompt,
             goal=goal,
             plan_summary=_plan_summary(plan),
             tool_outputs=_tool_outputs_summary(tool_outputs),
