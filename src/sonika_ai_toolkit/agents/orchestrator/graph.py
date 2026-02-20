@@ -198,6 +198,8 @@ class OrchestratorBot:
             on_thinking=self.on_thinking,
             on_message=self.on_message,
             logger=self.logger,
+            prompt_template=self.prompts.manager,
+            core_prompt=self.prompts.core,
         )
         planner = PlannerNode(
             strong_model=self.strong_model,

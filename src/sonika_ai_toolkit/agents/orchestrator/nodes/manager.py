@@ -23,17 +23,21 @@ class ManagerNode:
         on_thinking: Optional[Callable[[str], None]] = None,
         on_message: Optional[Callable[[str], None]] = None,
         logger=None,
+        prompt_template: str = MANAGER_PROMPT,
+        core_prompt: str = PROMPT_A,
     ):
         self.fast_model = fast_model
         self.on_thinking = on_thinking
         self.on_message = on_message
         self.logger = logger or logging.getLogger(__name__)
+        self.prompt_template = prompt_template
+        self.core_prompt = core_prompt
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         goal = state.get("goal", "")
         
-        prompt = MANAGER_PROMPT.format(
-            prompt_a=PROMPT_A,
+        prompt = self.prompt_template.format(
+            prompt_a=self.core_prompt,
             goal=goal,
         )
 

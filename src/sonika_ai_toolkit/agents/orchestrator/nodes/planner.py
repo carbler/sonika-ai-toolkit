@@ -75,8 +75,21 @@ class PlannerNode:
         plan_steps: List[Dict[str, Any]] = []
         thinking_text: Optional[str] = None
 
-        # ── Attempt 1: structured output (best for OpenAI) ────────────────
-        if self._structured_model is not None:
+        # ── Attempt 1: raw streaming + JSON extraction (Best for progress/thinking) ──
+        # If on_thinking is set, we prefer streaming to show progress.
+        if self.on_thinking:
+            try:
+                response = await ainvoke_with_thinking(
+                    self.strong_model.model, prompt, self.on_thinking
+                )
+                thinking_text = response.additional_kwargs.get("_thinking")
+                raw = response.content
+                plan_steps = _parse_plan_from_text(raw)
+            except Exception as e:
+                self.logger.warning(f"[planner] Streaming attempt failed: {e}")
+
+        # ── Attempt 2: structured output (Fallback or default if no thinking needed) ──
+        if not plan_steps and self._structured_model is not None:
             try:
                 result: _PlanSchema = await self._structured_model.ainvoke(prompt)
                 if result.steps:
@@ -84,22 +97,17 @@ class PlannerNode:
                         make_step(s.id, s.description, s.tool_name, s.params, s.risk_level)
                         for s in result.steps
                     ]
-                else:
-                    self.logger.warning("[planner] Structured output returned 0 steps → falling to raw.")
             except Exception as e:
-                self.logger.warning(f"[planner] Structured output failed ({e}) → falling to raw.")
+                self.logger.warning(f"[planner] Structured output failed: {e}")
 
-        # ── Attempt 2: raw streaming + JSON extraction (works for all models) ─
-        if not plan_steps:
+        # ── Attempt 3: raw fallback if structured was tried and failed ──
+        if not plan_steps and not self.on_thinking:
             try:
                 response = await ainvoke_with_thinking(
                     self.strong_model.model, prompt, self.on_thinking
                 )
                 thinking_text = response.additional_kwargs.get("_thinking")
-                raw = response.content  # already clean string from ainvoke_with_thinking
-                plan_steps = _parse_plan_from_text(raw)
-                if not plan_steps:
-                    self.logger.warning(f"[planner] Could not parse plan from raw response:\n{raw[:300]}")
+                plan_steps = _parse_plan_from_text(response.content)
             except Exception as e:
                 self.logger.error(f"[planner] Raw fallback also failed: {e}")
 
