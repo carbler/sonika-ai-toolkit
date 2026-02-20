@@ -60,8 +60,14 @@ class PlannerNode:
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         goal = state.get("goal", "")
         context = state.get("context", "")
+        history = state.get("history", [])
         memory_context = self.memory_manager.read_memory()
         tool_descriptions = self.registry.get_tool_descriptions()
+
+        # Format conversation history for the prompt
+        history_str = ""
+        if history:
+            history_str = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in history])
 
         prompt = self.prompt_template.format(
             prompt_a=self.core_prompt,
@@ -69,7 +75,7 @@ class PlannerNode:
             tool_descriptions=tool_descriptions,
             memory_context=memory_context,
             goal=goal,
-            context=context,
+            context=f"Conversation History:\n{history_str}\n\nAdditional Context:\n{context}",
         )
 
         plan_steps: List[Dict[str, Any]] = []

@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
 from sonika_ai_toolkit.tools.registry import ToolRegistry
@@ -57,6 +58,7 @@ class OrchestratorBot:
         on_message: Optional[Callable[[str], None]] = None,
         logger: Optional[logging.Logger] = None,
         prompts: Optional[OrchestratorPrompts] = None,
+        checkpointer: Any = None,
     ):
         self.strong_model = strong_model
         self.fast_model = fast_model
@@ -71,6 +73,7 @@ class OrchestratorBot:
         self.on_thinking = on_thinking
         self.on_message = on_message
         self.prompts = prompts or OrchestratorPrompts()
+        self.checkpointer = checkpointer or MemorySaver()
 
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -93,24 +96,16 @@ class OrchestratorBot:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    async def arun(self, goal: str, context: str = "") -> BotResponse:
+    async def arun(self, goal: str, context: str = "", thread_id: str = None) -> BotResponse:
         """
         Run the orchestrator asynchronously.
 
-        Returns a BotResponse object:
-            content       — final report text
-            thinking      — accumulated reasoning across all nodes (or None)
-            tools_executed — list of {tool_name, args, status, output}
-            logs          — session log lines
-            token_usage   — token tracking (if supported)
-            success       — True if at least one step succeeded
-            plan          — full step list with statuses
-            session_id    — unique run identifier
-            goal          — original goal
+        Returns a BotResponse object.
         """
-        session_id = str(uuid.uuid4())[:8]
+        run_id = str(uuid.uuid4())[:8]
+        current_thread = thread_id or str(uuid.uuid4())[:8]
 
-        initial_state: OrchestratorState = {
+        initial_state: Dict[str, Any] = {
             "goal": goal,
             "context": context,
             "plan": [],
@@ -127,16 +122,17 @@ class OrchestratorBot:
             "user_approved": None,
             "final_report": None,
             "_goal_complete": False,
-            "session_log": [],
+            "session_log": [f"--- New Turn: {goal} ---"],
+            "history": [{"role": "user", "content": goal}],
             "model_used": getattr(self.strong_model, "model_name", "unknown"),
-            "session_id": session_id,
+            "session_id": run_id,
             "skills_dir": self.skills_dir,
             "thinking": "",
         }
 
         result = await self.graph.ainvoke(
             initial_state,
-            config={"recursion_limit": 100},
+            config={"recursion_limit": 100, "configurable": {"thread_id": current_thread}},
         )
 
         plan = result.get("plan", [])
@@ -145,6 +141,9 @@ class OrchestratorBot:
         thinking = result.get("thinking") or None
         success = any(s.get("status") == "success" for s in plan)
 
+        # Append assistant response to history in state (via node or here? Let's do it via node later or here)
+        # Actually, it's better if the ReporterNode appends to history.
+        
         # Build tools_executed matching ReactBot format
         tools_executed = [
             {
@@ -169,21 +168,19 @@ class OrchestratorBot:
             goal=goal,
         )
 
-    def run(self, goal: str, context: str = "") -> BotResponse:
+    def run(self, goal: str, context: str = "", thread_id: str = None) -> BotResponse:
         """
         Run the orchestrator synchronously.
         """
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # If we are already in an event loop, we can't use asyncio.run
-                # This is a fallback but generally 'arun' should be used in async contexts
                 import nest_asyncio
                 nest_asyncio.apply()
         except RuntimeError:
             pass
 
-        return asyncio.run(self.arun(goal, context))
+        return asyncio.run(self.arun(goal, context, thread_id))
 
     # ── Graph construction ─────────────────────────────────────────────────
 
@@ -324,7 +321,7 @@ class OrchestratorBot:
         workflow.add_edge("reporter", "save_memory")
         workflow.add_edge("save_memory", END)
 
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
 
     # ── Routing functions ──────────────────────────────────────────────────
 

@@ -75,4 +75,5 @@ class ReporterNode:
         return {
             "final_report": report,
             "session_log": ["[reporter] Final report generated."],
+            "history": [{"role": "assistant", "content": report}],
         }

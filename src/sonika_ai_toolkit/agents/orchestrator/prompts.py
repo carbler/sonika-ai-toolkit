@@ -147,6 +147,9 @@ Output ONLY the 2 bullet points, nothing else.
 # ── Manager prompt ─────────────────────────────────────────────────────────
 MANAGER_PROMPT = """{prompt_a}
 
+## Conversation History
+{history}
+
 You are an intelligent assistant.
 The user wants: "{goal}"
 

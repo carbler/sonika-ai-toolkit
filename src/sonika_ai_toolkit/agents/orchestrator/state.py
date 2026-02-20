@@ -41,6 +41,8 @@ class OrchestratorState(TypedDict):
     # ── Session ────────────────────────────────────────────────────────────
     # Accumulative log lines.
     session_log: Annotated[List[str], operator.add]
+    # Accumulative turn history: list of {"role": "user"|"assistant", "content": str}
+    history: Annotated[List[Dict[str, str]], operator.add]
     model_used: str
     session_id: str
     skills_dir: str

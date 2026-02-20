@@ -35,10 +35,19 @@ class ManagerNode:
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         goal = state.get("goal", "")
-        
+        history = state.get("history", [])
+
+        # Format conversation history
+        history_str = ""
+        if history:
+            # Skip the very last message which is the current goal
+            h_list = history[:-1]
+            history_str = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in h_list])
+
         prompt = self.prompt_template.format(
             prompt_a=self.core_prompt,
             goal=goal,
+            history=history_str or "(No previous history)",
         )
 
         try:
