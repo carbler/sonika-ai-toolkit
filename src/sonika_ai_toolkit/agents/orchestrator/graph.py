@@ -13,7 +13,9 @@ from sonika_ai_toolkit.tools.registry import ToolRegistry
 from sonika_ai_toolkit.tools.synthesizer import DynamicToolSynthesizer
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
+from sonika_ai_toolkit.agents.orchestrator.prompts import OrchestratorPrompts
 from sonika_ai_toolkit.agents.orchestrator.nodes.load_memory import LoadMemoryNode
+from sonika_ai_toolkit.agents.orchestrator.nodes.manager import ManagerNode
 from sonika_ai_toolkit.agents.orchestrator.nodes.planner import PlannerNode
 from sonika_ai_toolkit.agents.orchestrator.nodes.step_dispatcher import StepDispatcherNode
 from sonika_ai_toolkit.agents.orchestrator.nodes.risk_gate import RiskGateNode
@@ -52,7 +54,9 @@ class OrchestratorBot:
         on_step_end: Optional[Callable[[Dict, str], None]] = None,
         on_plan_generated: Optional[Callable[[List], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
+        on_message: Optional[Callable[[str], None]] = None,
         logger: Optional[logging.Logger] = None,
+        prompts: Optional[OrchestratorPrompts] = None,
     ):
         self.strong_model = strong_model
         self.fast_model = fast_model
@@ -65,6 +69,8 @@ class OrchestratorBot:
         self.on_step_end = on_step_end
         self.on_plan_generated = on_plan_generated
         self.on_thinking = on_thinking
+        self.on_message = on_message
+        self.prompts = prompts or OrchestratorPrompts()
 
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -87,16 +93,16 @@ class OrchestratorBot:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    def run(self, goal: str, context: str = "") -> Dict[str, Any]:
+    async def arun(self, goal: str, context: str = "") -> BotResponse:
         """
-        Run the orchestrator synchronously.
+        Run the orchestrator asynchronously.
 
-        Returns a dict with the same structure as ReactBot.get_response():
+        Returns a BotResponse object:
             content       — final report text
             thinking      — accumulated reasoning across all nodes (or None)
             tools_executed — list of {tool_name, args, status, output}
             logs          — session log lines
-            token_usage   — placeholder (orchestrator doesn't track tokens yet)
+            token_usage   — token tracking (if supported)
             success       — True if at least one step succeeded
             plan          — full step list with statuses
             session_id    — unique run identifier
@@ -128,11 +134,9 @@ class OrchestratorBot:
             "thinking": "",
         }
 
-        result = asyncio.run(
-            self.graph.ainvoke(
-                initial_state,
-                config={"recursion_limit": 100},
-            )
+        result = await self.graph.ainvoke(
+            initial_state,
+            config={"recursion_limit": 100},
         )
 
         plan = result.get("plan", [])
@@ -165,12 +169,34 @@ class OrchestratorBot:
             goal=goal,
         )
 
+    def run(self, goal: str, context: str = "") -> BotResponse:
+        """
+        Run the orchestrator synchronously.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we are already in an event loop, we can't use asyncio.run
+                # This is a fallback but generally 'arun' should be used in async contexts
+                import nest_asyncio
+                nest_asyncio.apply()
+        except RuntimeError:
+            pass
+
+        return asyncio.run(self.arun(goal, context))
+
     # ── Graph construction ─────────────────────────────────────────────────
 
     def _build_workflow(self) -> StateGraph:
         load_memory = LoadMemoryNode(
             memory_manager=self.memory_manager,
             tool_registry=self.registry,
+            logger=self.logger,
+        )
+        manager = ManagerNode(
+            fast_model=self.fast_model,
+            on_thinking=self.on_thinking,
+            on_message=self.on_message,
             logger=self.logger,
         )
         planner = PlannerNode(
@@ -181,6 +207,8 @@ class OrchestratorBot:
             on_plan_generated=self.on_plan_generated,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.planner,
+            core_prompt=self.prompts.core,
         )
         step_dispatcher = StepDispatcherNode(
             tool_registry=self.registry,
@@ -205,27 +233,45 @@ class OrchestratorBot:
             fast_model=self.fast_model,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.evaluator,
+            core_prompt=self.prompts.core,
         )
         retry = RetryNode(
             fast_model=self.fast_model,
             tool_registry=self.registry,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.retry,
+            core_prompt=self.prompts.core,
         )
         escalate = EscalateNode(logger=self.logger)
         reporter = ReporterNode(
             fast_model=self.fast_model,
             on_thinking=self.on_thinking,
             logger=self.logger,
+            prompt_template=self.prompts.reporter,
+            core_prompt=self.prompts.core,
         )
         save_memory = SaveMemoryNode(
             fast_model=self.fast_model,
             memory_manager=self.memory_manager,
             logger=self.logger,
+            prompt_template=self.prompts.save_memory,
+            core_prompt=self.prompts.core,
         )
+
+        # Keep references for introspection (e.g., tests, debugging)
+        self._nodes = {
+            "planner": planner,
+            "evaluator": evaluator,
+            "retry": retry,
+            "reporter": reporter,
+            "save_memory": save_memory,
+        }
 
         workflow = StateGraph(OrchestratorState)
         workflow.add_node("load_memory", load_memory)
+        workflow.add_node("manager", manager)
         workflow.add_node("planner", planner)
         workflow.add_node("step_dispatcher", step_dispatcher)
         workflow.add_node("risk_gate", risk_gate)
@@ -238,7 +284,12 @@ class OrchestratorBot:
         workflow.add_node("save_memory", save_memory)
 
         workflow.set_entry_point("load_memory")
-        workflow.add_edge("load_memory", "planner")
+        workflow.add_edge("load_memory", "manager")
+        workflow.add_conditional_edges(
+            "manager",
+            self._route_after_manager,
+            {"planner": "planner", "save_memory": "save_memory"},
+        )
         workflow.add_edge("planner", "step_dispatcher")
 
         workflow.add_conditional_edges(
@@ -274,6 +325,9 @@ class OrchestratorBot:
         return workflow.compile()
 
     # ── Routing functions ──────────────────────────────────────────────────
+
+    def _route_after_manager(self, state: OrchestratorState) -> str:
+        return "save_memory" if state.get("_goal_complete") else "planner"
 
     def _route_after_dispatcher(self, state: OrchestratorState) -> str:
         plan = state.get("plan", [])

@@ -6,7 +6,7 @@ and split them into manageable chunks for processing.
 """
 
 import tiktoken
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 
 class DocumentProcessor:

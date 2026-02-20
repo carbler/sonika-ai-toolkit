@@ -34,16 +34,18 @@ GOAL = (
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _build_bot(language_model, memory_path: str, **kwargs) -> OrchestratorBot:
-    return OrchestratorBot(
-        strong_model=language_model,
-        fast_model=language_model,
-        instructions=INSTRUCTIONS,
-        tools=[EmailTool(), SaveContacto()],
-        risk_threshold=2,
-        max_retries=2,
-        memory_path=memory_path,
-        **kwargs,
-    )
+    # Set default values but allow kwargs to override them
+    params = {
+        "strong_model": language_model,
+        "fast_model": language_model,
+        "instructions": INSTRUCTIONS,
+        "tools": [EmailTool(), SaveContacto()],
+        "risk_threshold": 2,
+        "max_retries": 2,
+        "memory_path": memory_path,
+    }
+    params.update(kwargs)
+    return OrchestratorBot(**params)
 
 
 def _assert_result(result: dict) -> None:

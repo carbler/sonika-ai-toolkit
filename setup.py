@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sonika-ai-toolkit",
-    version="0.1.2",
+    version="0.2.3",
     description="Toolkit para creación de agentes de IA y procesamiento de documentos",
     author="Erley Blanco Carvajal",
     license="MIT License",
@@ -30,7 +30,8 @@ setup(
         "PyPDF2==3.0.1",
         "python-docx==1.2.0",
         "openpyxl==3.1.5",
-        "python-pptx==1.0.2"
+        "python-pptx==1.0.2",
+        "nest-asyncio==1.6.0"
     ],
 
     extras_require={

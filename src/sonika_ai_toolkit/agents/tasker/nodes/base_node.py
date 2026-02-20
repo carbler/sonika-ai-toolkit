@@ -1,7 +1,7 @@
 """Clase base abstracta para todos los nodos."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 

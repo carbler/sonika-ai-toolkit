@@ -235,8 +235,6 @@ class TaskerBot:
 
         content = result.get("output_node_response", "")
         # logs and tools_executed in the result are now the cumulative lists
-        new_logs = result.get("logger_output", [])
-
         full_logs = result.get("logs", [])
         original_log_count = len(limited_logs)
         new_logs_slice = full_logs[original_log_count:]

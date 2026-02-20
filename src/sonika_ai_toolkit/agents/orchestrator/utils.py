@@ -1,5 +1,6 @@
 """Shared utilities for orchestrator nodes."""
 
+import asyncio
 from typing import Callable, List, Optional
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
@@ -24,7 +25,6 @@ def get_text(content) -> str:
                     parts.append(str(text))
         return "\n".join(parts).strip()
     return str(content) if content else ""
-
 
 async def ainvoke_with_thinking(
     model,
@@ -54,7 +54,10 @@ async def ainvoke_with_thinking(
                         if t:
                             thinking_chunks.append(t)
                             if on_thinking:
-                                on_thinking(t)
+                                # "letra a letra" (character by character) delivery
+                                for char in t:
+                                    on_thinking(char)
+                                    await asyncio.sleep(0.002)
             accumulated = chunk if accumulated is None else (accumulated + chunk)
 
         if accumulated is None:
@@ -74,7 +77,10 @@ async def ainvoke_with_thinking(
             if deepseek:
                 extra["_thinking"] = deepseek
                 if on_thinking:
-                    on_thinking(deepseek)
+                    # Stream the full reasoning block "letra a letra"
+                    for char in deepseek:
+                        on_thinking(char)
+                        await asyncio.sleep(0.001)
 
         return AIMessage(content=clean, additional_kwargs=extra)
 
@@ -89,7 +95,9 @@ async def ainvoke_with_thinking(
         if deepseek:
             extra["_thinking"] = deepseek
             if on_thinking:
-                on_thinking(deepseek)
+                for char in deepseek:
+                    on_thinking(char)
+                    await asyncio.sleep(0.001)
 
         # Gemini fallback: extract thinking from list content
         if not extra.get("_thinking") and isinstance(
@@ -104,7 +112,9 @@ async def ainvoke_with_thinking(
             if t_text:
                 extra["_thinking"] = t_text
                 if on_thinking:
-                    on_thinking(t_text)
+                    for char in t_text:
+                        on_thinking(char)
+                        await asyncio.sleep(0.001)
 
         return AIMessage(content=clean, additional_kwargs=extra)
 

@@ -1,7 +1,7 @@
 """RunBashTool — executes a shell command in a subprocess."""
 
 import subprocess
-from typing import Optional, Type
+from typing import Type
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 

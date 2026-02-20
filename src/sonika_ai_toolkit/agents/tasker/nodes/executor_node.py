@@ -2,7 +2,6 @@
 
 from typing import Dict, Any, Optional, Callable, List
 import json
-import asyncio
 from langchain_core.messages import ToolMessage
 from sonika_ai_toolkit.agents.tasker.nodes.base_node import BaseNode
 
@@ -98,7 +97,6 @@ class ExecutorNode(BaseNode):
 
                     results_accumulated.append(result)
                     messages_accumulated.append(tool_msg)
-                    success = True
                     break
 
                 except Exception as e:
@@ -106,7 +104,7 @@ class ExecutorNode(BaseNode):
                     if self.on_tool_error:
                         try:
                             self.on_tool_error(tool_name, str(e))
-                        except:
+                        except Exception:
                             pass
 
                     if attempt >= self.max_retries:
@@ -154,7 +152,7 @@ class ExecutorNode(BaseNode):
         if self.on_tool_start:
             try:
                 self.on_tool_start(tool_name, json.dumps(params))
-            except:
+            except Exception:
                 pass
 
         output = await tool.ainvoke(params)
@@ -162,7 +160,7 @@ class ExecutorNode(BaseNode):
         if self.on_tool_end:
             try:
                 self.on_tool_end(tool_name, str(output))
-            except:
+            except Exception:
                 pass
 
         return {
@@ -186,7 +184,7 @@ class ExecutorNode(BaseNode):
         )
          return {"result": error_result, "message": tool_msg}
 
-    def _create_error_output(self, error: str, tool_name: str = None, tool_call_id: str = "unknown") -> Dict[str, Any]:
+    def _create_error_output(self, error: str, tool_name: str = "unknown", tool_call_id: str = "unknown") -> Dict[str, Any]:
         """Create global error output."""
         res = self._create_single_error(error, tool_name, tool_call_id)
         return {

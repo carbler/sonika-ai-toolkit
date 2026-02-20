@@ -25,7 +25,13 @@ class OpenAILanguageModel(ILanguageModel):
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
-        self.model = ChatOpenAI(temperature=temperature, model_name=model_name, api_key=api_key, stream_usage=True)
+        from pydantic import SecretStr
+        self.model = ChatOpenAI(
+            temperature=temperature, 
+            model=model_name, 
+            api_key=SecretStr(api_key), 
+            stream_usage=True
+        )
         self.supports_thinking = False
 
     def predict(self, prompt: str) -> str:
@@ -38,7 +44,8 @@ class OpenAILanguageModel(ILanguageModel):
         Returns:
             str: Respuesta generada por el modelo
         """
-        return self.model.predict(prompt)
+        res = self.model.predict(prompt)
+        return str(res)
     
     def invoke(self, prompt: str) -> str:
         """
@@ -52,21 +59,47 @@ class OpenAILanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         response = self.model.invoke([message])
-        return response.content
-    
+        content = response.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for p in content:
+                if isinstance(p, str):
+                    parts.append(p)
+                elif isinstance(p, dict):
+                    if p.get("type") != "thinking":
+                        parts.append(str(p.get("text") or p.get("content") or ""))
+            return "\n".join(parts).strip()
+        return str(content)
+
     def stream_response(self, prompt: str) -> Generator[str, None, None]:
         """
         Genera una respuesta en streaming basada en el prompt proporcionado.
 
         Args:
             prompt (str): Texto de entrada para generar la respuesta
-        
+
         Yields:
             str: Fragmentos de la respuesta generada por el modelo en tiempo real
         """
         message = HumanMessage(content=prompt)
         for chunk in self.model.stream([message]):
-            yield chunk.content
+            content = chunk.content
+            if isinstance(content, str):
+                yield content
+            elif isinstance(content, list):
+                parts = []
+                for p in content:
+                    if isinstance(p, str):
+                        parts.append(p)
+                    elif isinstance(p, dict):
+                        if p.get("type") != "thinking":
+                            parts.append(str(p.get("text") or p.get("content") or ""))
+                yield "\n".join(parts)
+            else:
+                yield str(content)
+
 
 
 class BedrockLanguageModel(ILanguageModel):
@@ -89,7 +122,7 @@ class BedrockLanguageModel(ILanguageModel):
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key
 
         self.model = ChatBedrock(
-            model_id=model_name,
+            model=model_name,
             region_name=region_name,
             model_kwargs={"temperature": temperature}
         )
@@ -119,7 +152,13 @@ class BedrockLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         response = self.model.invoke([message])
-        return response.content
+        content = response.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+            return "\n".join(parts).strip()
+        return str(content)
 
     def stream_response(self, prompt: str) -> Generator[str, None, None]:
         """
@@ -133,7 +172,14 @@ class BedrockLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         for chunk in self.model.stream([message]):
-            yield chunk.content
+            content = chunk.content
+            if isinstance(content, str):
+                yield content
+            elif isinstance(content, list):
+                parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+                yield "\n".join(parts)
+            else:
+                yield str(content)
 
 
 class GeminiLanguageModel(ILanguageModel):
@@ -161,7 +207,7 @@ class GeminiLanguageModel(ILanguageModel):
         logger = logging.getLogger(__name__)
         self.supports_thinking = any(
             marker in model_name.lower()
-            for marker in ["thinking", "2.5", "2-5", "2_5", "pro-preview"]
+            for marker in ["-thinking-", "thinking-exp"]
         )
 
         effective_temperature = temperature
@@ -209,7 +255,13 @@ class GeminiLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         response = self.model.invoke([message])
-        return response.content
+        content = response.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+            return "\n".join(parts).strip()
+        return str(content)
 
     def stream_response(self, prompt: str) -> Generator[str, None, None]:
         """
@@ -223,7 +275,14 @@ class GeminiLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         for chunk in self.model.stream([message]):
-            yield chunk.content
+            content = chunk.content
+            if isinstance(content, str):
+                yield content
+            elif isinstance(content, list):
+                parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+                yield "\n".join(parts)
+            else:
+                yield str(content)
 
 
 class _DeepSeekReasonerChatModel(ChatOpenAI):
@@ -260,10 +319,11 @@ class DeepSeekLanguageModel(ILanguageModel):
         """
         is_reasoner = model_name == "deepseek-reasoner" or "r1" in model_name.lower()
         model_class = _DeepSeekReasonerChatModel if is_reasoner else ChatOpenAI
+        from pydantic import SecretStr
         self.model = model_class(
             temperature=temperature,
-            model_name=model_name,
-            api_key=api_key,
+            model=model_name,
+            api_key=SecretStr(api_key),
             base_url="https://api.deepseek.com"
         )
         self.supports_thinking = is_reasoner
@@ -292,7 +352,13 @@ class DeepSeekLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         response = self.model.invoke([message])
-        return response.content
+        content = response.content
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+            return "\n".join(parts).strip()
+        return str(content)
 
     def stream_response(self, prompt: str) -> Generator[str, None, None]:
         """
@@ -306,4 +372,11 @@ class DeepSeekLanguageModel(ILanguageModel):
         """
         message = HumanMessage(content=prompt)
         for chunk in self.model.stream([message]):
-            yield chunk.content
+            content = chunk.content
+            if isinstance(content, str):
+                yield content
+            elif isinstance(content, list):
+                parts = [str(p.get("text") or p.get("content") or p if isinstance(p, dict) else p) for p in content if not (isinstance(p, dict) and p.get("type") == "thinking")]
+                yield "\n".join(parts)
+            else:
+                yield str(content)

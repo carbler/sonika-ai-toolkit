@@ -1,16 +1,18 @@
 """Prompt templates for OrchestratorBot."""
 
+from dataclasses import dataclass, field
+
 # ── PROMPT_A — Core orchestration rules injected into every node ───────────
-PROMPT_A = """You are an autonomous AI orchestrator. Your job is to decompose goals into steps,
-execute each step using available tools, evaluate results, and produce a final report.
+PROMPT_A = """You are an autonomous AI assistant. Your job is to decompose goals into steps,
+execute each step using available tools, evaluate results, and provide a direct, natural response to the user.
 
 CORE RULES:
 1. Always work from the goal — never drift from the original objective.
 2. Use only the tools listed in the tool registry. Do not invent tool names.
 3. Be precise with parameters — pass exactly what the tool expects.
 4. If a step fails, reason about why and decide the best recovery strategy.
-5. When the goal is achieved, say so clearly in the final report.
-6. Keep responses concise and structured (JSON when asked for structured output).
+5. When the goal is achieved, respond naturally to the user confirming the outcome.
+6. Keep technical internal details (like step IDs or tool names) out of the final response unless necessary.
 """
 
 # ── Planner prompt ─────────────────────────────────────────────────────────
@@ -102,7 +104,7 @@ Decide the best recovery strategy. Output ONLY a JSON object:
 strategy options:
 - "retry_params": retry same tool with corrected parameters
 - "alt_tool": use a different existing tool to achieve the same goal
-- "synth_tool": generate a new custom tool (tool_name = new name, params = {{\"description\": \"what it does\"}})
+- "synth_tool": generate a new custom tool (tool_name = new name, params = {{"description\": \"what it does\"}})
 - "escalate": give up on this step (max retries reached or unrecoverable)
 """
 
@@ -118,11 +120,12 @@ REPORTER_PROMPT = """{prompt_a}
 ## Tool Outputs
 {tool_outputs}
 
-Write a clear, concise final report (2-5 paragraphs) that:
-1. States whether the goal was achieved.
-2. Summarizes what was done and the key results.
-3. Notes any steps that were skipped or failed.
-4. Provides any relevant output or findings.
+Write a natural, friendly, and direct response to the user.
+- Answer the user's request directly based on the tool outputs.
+- Do NOT say "Hello! This report summarizes..." or use robotic/formal report language.
+- Speak like a human assistant would. Be concise but helpful.
+- If you were asked for a specific piece of information (like a version or status), give it clearly.
+- If something went wrong, explain it briefly and naturally without technical jargon if possible.
 """
 
 # ── Save-memory prompt ─────────────────────────────────────────────────────
@@ -140,3 +143,54 @@ Write exactly 2 bullet points (one per line, starting with "- ") summarizing:
 
 Output ONLY the 2 bullet points, nothing else.
 """
+
+# ── Manager prompt ─────────────────────────────────────────────────────────
+MANAGER_PROMPT = """{prompt_a}
+
+You are an intelligent assistant.
+The user wants: "{goal}"
+
+Decide if you need to execute a plan with tools (orchestration) or if you can just answer directly (chat).
+
+If it needs orchestration:
+Tell the user naturally what you're going to do.
+Output ONLY a JSON:
+{{
+  "action": "plan",
+  "explanation": "A natural, brief sentence about what you'll do to help."
+}}
+
+If it's just chat:
+Respond naturally and helpfuly.
+Output ONLY a JSON:
+{{
+  "action": "chat",
+  "content": "Your friendly, natural response."
+}}
+"""
+
+
+# ── Injectable prompt configuration ────────────────────────────────────────
+
+@dataclass
+class OrchestratorPrompts:
+    """Injectable prompt templates for OrchestratorBot.
+
+    All fields default to the built-in templates above.  Override any field to
+    change the behaviour of that specific stage without touching the rest.
+
+    Fields:
+        core        — Base rules injected as {prompt_a} into every other template.
+        planner     — Strong model: decompose the goal into a JSON step plan.
+        evaluator   — Fast model: judge step success and goal completion.
+        retry       — Fast model: decide recovery strategy after a failure.
+        reporter    — Fast model: write the final report.
+        save_memory — Fast model: summarise the session for persistent memory.
+    """
+
+    core: str = field(default_factory=lambda: PROMPT_A)
+    planner: str = field(default_factory=lambda: PLANNER_PROMPT)
+    evaluator: str = field(default_factory=lambda: EVALUATOR_PROMPT)
+    retry: str = field(default_factory=lambda: RETRY_PROMPT)
+    reporter: str = field(default_factory=lambda: REPORTER_PROMPT)
+    save_memory: str = field(default_factory=lambda: SAVE_MEMORY_PROMPT)

@@ -43,7 +43,8 @@ ruff check .
 ```
 tests/
 ├── conftest.py          # Shared mocks — no API keys needed
-├── unit/                # 112 tests — isolated, ~3s
+├── unit/                # 153 tests — isolated, ~3s
+│   └── test_orchestrator_prompts.py  # Prompt injection tests (26 tests)
 ├── integration/         # 15 tests — mocked, ~3s
 ├── e2e/                 # 9 tests — real API calls, skip if key missing
 │   ├── conftest.py      # ← MODEL CONFIGURATION (change model name here)
@@ -128,6 +129,89 @@ Four architectures for different use cases:
    - `bot.run(goal, context="")` — synchronous entry point
    - `memory_path` — directory for MEMORY.md, SKILLS.md, session logs
    - `risk_threshold=-1` forces all steps through `on_human_approval` callback
+   - `prompts=OrchestratorPrompts(...)` — injectable prompt templates (see below)
+
+### OrchestratorBot — How it works
+
+The orchestrator runs a **LangGraph state machine** with 11 nodes. Each `run(goal)` call:
+
+```
+load_memory → planner → step_dispatcher → risk_gate → [human_approval] → executor
+                                    ↑                                         ↓
+                             escalate ← retry ←──────────────────────── evaluator
+                                                                              ↓
+                                                             reporter → save_memory → END
+```
+
+**Execution flow per step:**
+1. `load_memory` — reads MEMORY.md + SKILLS.md, registers any previously synthesized tools
+2. `planner` (strong_model) — decomposes the goal into a JSON step list
+3. `step_dispatcher` — picks the next pending step; routes to `reporter` when all done
+4. `risk_gate` — compares `step.risk_level` vs `risk_threshold`; routes to `human_approval` if above threshold
+5. `human_approval` — calls `on_human_approval(step)` callback; skips step if returns False
+6. `executor` — invokes the tool; supports `synth_tool` strategy (generates a new tool at runtime)
+7. `evaluator` (fast_model) — judges step success and whether the overall goal is already met
+8. `retry` (fast_model) — on failure: picks `retry_params | alt_tool | synth_tool | escalate`; anti-loop hash check
+9. `escalate` — marks step as failed, resets retry counters, advances to next step
+10. `reporter` (fast_model) — writes the final 2-5 paragraph report
+11. `save_memory` (fast_model) — generates 2-bullet summary, appends to MEMORY.md
+
+**Model routing:**
+- `strong_model` — used only by `planner`
+- `fast_model` — used by `evaluator`, `retry`, `reporter`, `save_memory`
+- `code_model` — used by `DynamicToolSynthesizer` when a `synth_tool` strategy is chosen
+
+**Risk levels:** 0=safe (read-only), 1=low, 2=medium, 3=high (external/financial). Steps at or below `risk_threshold` are auto-approved.
+
+### OrchestratorBot — Prompt Injection
+
+All LLM prompts are externalised in `orchestrator/prompts.py` and injectable via `OrchestratorPrompts`:
+
+```python
+from sonika_ai_toolkit.agents.orchestrator.prompts import OrchestratorPrompts
+from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
+
+# Override only the core rules — all other prompts stay default
+prompts = OrchestratorPrompts(
+    core="You are a financial compliance bot. Never approve transfers above $10k.",
+)
+
+# Override a specific stage template (must keep all {placeholders} the template uses)
+prompts = OrchestratorPrompts(
+    reporter="""
+{prompt_a}
+
+## Objective
+{goal}
+
+## Steps executed
+{plan_summary}
+
+Write a ONE-paragraph executive summary only.
+{tool_outputs}
+""",
+)
+
+bot = OrchestratorBot(
+    strong_model=...,
+    fast_model=...,
+    instructions="...",
+    prompts=prompts,
+)
+```
+
+**`OrchestratorPrompts` fields and their placeholders:**
+
+| Field | Used by node | Required placeholders |
+|---|---|---|
+| `core` | injected as `{prompt_a}` into all templates | — |
+| `planner` | `PlannerNode` | `{prompt_a}` `{instructions}` `{tool_descriptions}` `{memory_context}` `{goal}` `{context}` |
+| `evaluator` | `EvaluatorNode` | `{prompt_a}` `{goal}` `{step_description}` `{tool_output}` `{plan_summary}` |
+| `retry` | `RetryNode` | `{prompt_a}` `{goal}` `{step_description}` `{error}` `{tool_descriptions}` `{retry_history}` |
+| `reporter` | `ReporterNode` | `{prompt_a}` `{goal}` `{plan_summary}` `{tool_outputs}` |
+| `save_memory` | `SaveMemoryNode` | `{prompt_a}` `{goal}` `{plan_summary}` |
+
+Node references after construction: `bot._nodes["planner"]`, `bot._nodes["evaluator"]`, etc.
 
 ### Tools (`src/sonika_ai_toolkit/tools/`)
 

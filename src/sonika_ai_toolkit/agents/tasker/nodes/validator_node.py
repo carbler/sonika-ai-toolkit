@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, List
 import os
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from sonika_ai_toolkit.agents.tasker.nodes.base_node import BaseNode
 
 class ValidatorNode(BaseNode):
