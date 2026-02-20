@@ -17,6 +17,7 @@ PyPDF2==3.0.1
 python-docx==1.2.0
 openpyxl==3.1.5
 python-pptx==1.0.2
-langchain-google-genai
+langchain-google-genai>=2.0.0
 langchain-aws
 boto3
+openai>=1.0.0

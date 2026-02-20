@@ -1,10 +1,13 @@
+import logging
 import os
+from typing import Generator, Optional
+
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_aws import ChatBedrock
-from sonika_ai_toolkit.utilities.types import ILanguageModel
 from langchain_core.messages import HumanMessage
-from typing import Generator
+
+from sonika_ai_toolkit.utilities.types import ILanguageModel
 
 
 class OpenAILanguageModel(ILanguageModel):
@@ -22,7 +25,8 @@ class OpenAILanguageModel(ILanguageModel):
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
-        self.model = ChatOpenAI(temperature=temperature, model_name=model_name, api_key=api_key)
+        self.model = ChatOpenAI(temperature=temperature, model_name=model_name, api_key=api_key, stream_usage=True)
+        self.supports_thinking = False
 
     def predict(self, prompt: str) -> str:
         """
@@ -89,6 +93,7 @@ class BedrockLanguageModel(ILanguageModel):
             region_name=region_name,
             model_kwargs={"temperature": temperature}
         )
+        self.supports_thinking = False
 
     def predict(self, prompt: str) -> str:
         """
@@ -137,7 +142,13 @@ class GeminiLanguageModel(ILanguageModel):
     Proporciona funcionalidades para generar respuestas y contar tokens.
     """
 
-    def __init__(self, api_key: str, model_name: str = "gemini-3-flash-preview", temperature: float = 0.7):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "gemini-3-flash-preview",
+        temperature: float = 0.7,
+        thinking_budget: Optional[int] = None,
+    ):
         """
         Inicializa el modelo de lenguaje de Gemini.
 
@@ -145,11 +156,33 @@ class GeminiLanguageModel(ILanguageModel):
             api_key (str): Clave API de Google Gemini
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
+            thinking_budget (int, optional): Presupuesto de tokens para modelos con thinking nativo.
         """
+        logger = logging.getLogger(__name__)
+        self.supports_thinking = any(
+            marker in model_name.lower()
+            for marker in ["thinking", "2.5", "2-5", "2_5", "pro-preview"]
+        )
+
+        effective_temperature = temperature
+        if self.supports_thinking and temperature != 1:
+            logger.warning(
+                "Gemini thinking models require temperature=1. Overriding provided value %s.",
+                temperature,
+            )
+            effective_temperature = 1.0
+
+        model_kwargs: dict = {}
+        if self.supports_thinking:
+            budget = thinking_budget if thinking_budget is not None else 8192
+            model_kwargs["thinking_budget"] = budget
+            model_kwargs["include_thoughts"] = True
+
         self.model = ChatGoogleGenerativeAI(
-            temperature=temperature,
+            temperature=effective_temperature,
             model=model_name,
-            google_api_key=api_key
+            google_api_key=api_key,
+            **model_kwargs,
         )
 
     def predict(self, prompt: str) -> str:
@@ -193,6 +226,23 @@ class GeminiLanguageModel(ILanguageModel):
             yield chunk.content
 
 
+class _DeepSeekReasonerChatModel(ChatOpenAI):
+    """ChatOpenAI subclass that captures reasoning_content for DeepSeek R1."""
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        try:
+            if not isinstance(response, dict):
+                response = response.model_dump()
+            for i, choice in enumerate(response.get("choices", [])):
+                reasoning = (choice.get("message") or {}).get("reasoning_content")
+                if reasoning and i < len(result.generations):
+                    result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
+        except Exception:
+            pass
+        return result
+
+
 class DeepSeekLanguageModel(ILanguageModel):
     """
     Clase que implementa la interfaz ILanguageModel para interactuar con los modelos de lenguaje de DeepSeek.
@@ -208,12 +258,15 @@ class DeepSeekLanguageModel(ILanguageModel):
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
-        self.model = ChatOpenAI(
+        is_reasoner = model_name == "deepseek-reasoner" or "r1" in model_name.lower()
+        model_class = _DeepSeekReasonerChatModel if is_reasoner else ChatOpenAI
+        self.model = model_class(
             temperature=temperature,
             model_name=model_name,
             api_key=api_key,
             base_url="https://api.deepseek.com"
         )
+        self.supports_thinking = is_reasoner
 
     def predict(self, prompt: str) -> str:
         """

@@ -28,3 +28,5 @@ test_ultimate/
 .agents/
 /myvenv/
 /test_ultimate/reports/*
+./ruff_cache
+./pytest_cache
