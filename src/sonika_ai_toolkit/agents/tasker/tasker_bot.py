@@ -8,6 +8,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langchain_community.callbacks.manager import get_openai_callback
 
+from sonika_ai_toolkit.utilities.types import BotResponse
 from sonika_ai_toolkit.agents.tasker.state import ChatState
 from sonika_ai_toolkit.agents.tasker.nodes.planner_node import PlannerNode
 from sonika_ai_toolkit.agents.tasker.nodes.executor_node import ExecutorNode
@@ -243,12 +244,12 @@ class TaskerBot:
         tools_executed = result.get("tools_executed", [])
         token_usage = result.get("token_usage", {})
 
-        return {
-            "content": content,
-            "logs": new_logs_slice, # Safer to return only new logs
-            "tools_executed": tools_executed,
-            "token_usage": token_usage
-        }
+        return BotResponse(
+            content=content,
+            logs=new_logs_slice,
+            tools_executed=tools_executed,
+            token_usage=token_usage,
+        )
 
     def _limit_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
         """Limit historical messages."""
