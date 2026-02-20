@@ -181,6 +181,7 @@ class OrchestratorPrompts:
 
     Fields:
         core        — Base rules injected as {prompt_a} into every other template.
+        manager     — Decide between direct chat or tool orchestration.
         planner     — Strong model: decompose the goal into a JSON step plan.
         evaluator   — Fast model: judge step success and goal completion.
         retry       — Fast model: decide recovery strategy after a failure.
@@ -189,6 +190,7 @@ class OrchestratorPrompts:
     """
 
     core: str = field(default_factory=lambda: PROMPT_A)
+    manager: str = field(default_factory=lambda: MANAGER_PROMPT)
     planner: str = field(default_factory=lambda: PLANNER_PROMPT)
     evaluator: str = field(default_factory=lambda: EVALUATOR_PROMPT)
     retry: str = field(default_factory=lambda: RETRY_PROMPT)

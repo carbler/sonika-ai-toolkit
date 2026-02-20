@@ -207,7 +207,7 @@ class GeminiLanguageModel(ILanguageModel):
         logger = logging.getLogger(__name__)
         self.supports_thinking = any(
             marker in model_name.lower()
-            for marker in ["-thinking-", "thinking-exp"]
+            for marker in ["-thinking", "thinking-exp", "gemini-3", "gemini-2.5"]
         )
 
         effective_temperature = temperature

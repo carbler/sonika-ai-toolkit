@@ -47,17 +47,21 @@ async def ainvoke_with_thinking(
 
         async for chunk in model.astream(prompt):
             # Gemini: thinking parts arrive as list items during stream
-            if isinstance(chunk.content, list):
-                for part in chunk.content:
+            content = chunk.content
+            
+            # Handle list content (Gemini style)
+            if isinstance(content, list):
+                for part in content:
                     if isinstance(part, dict) and part.get("type") == "thinking":
                         t = part.get("thinking", "")
                         if t:
                             thinking_chunks.append(t)
                             if on_thinking:
-                                # "letra a letra" (character by character) delivery
                                 for char in t:
                                     on_thinking(char)
-                                    await asyncio.sleep(0.002)
+                                    await asyncio.sleep(0.001)
+            
+            # Handle potential string with thinking tags or just text
             accumulated = chunk if accumulated is None else (accumulated + chunk)
 
         if accumulated is None:
