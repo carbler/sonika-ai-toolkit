@@ -57,9 +57,7 @@ async def ainvoke_with_thinking(
                         if t:
                             thinking_chunks.append(t)
                             if on_thinking:
-                                for char in t:
-                                    on_thinking(char)
-                                    await asyncio.sleep(0.001)
+                                on_thinking(t)
             
             # Handle potential string with thinking tags or just text
             accumulated = chunk if accumulated is None else (accumulated + chunk)
@@ -81,10 +79,7 @@ async def ainvoke_with_thinking(
             if deepseek:
                 extra["_thinking"] = deepseek
                 if on_thinking:
-                    # Stream the full reasoning block "letra a letra"
-                    for char in deepseek:
-                        on_thinking(char)
-                        await asyncio.sleep(0.001)
+                    on_thinking(deepseek)
 
         return AIMessage(content=clean, additional_kwargs=extra)
 
@@ -99,9 +94,7 @@ async def ainvoke_with_thinking(
         if deepseek:
             extra["_thinking"] = deepseek
             if on_thinking:
-                for char in deepseek:
-                    on_thinking(char)
-                    await asyncio.sleep(0.001)
+                on_thinking(deepseek)
 
         # Gemini fallback: extract thinking from list content
         if not extra.get("_thinking") and isinstance(
@@ -116,9 +109,7 @@ async def ainvoke_with_thinking(
             if t_text:
                 extra["_thinking"] = t_text
                 if on_thinking:
-                    for char in t_text:
-                        on_thinking(char)
-                        await asyncio.sleep(0.001)
+                    on_thinking(t_text)
 
         return AIMessage(content=clean, additional_kwargs=extra)
 
