@@ -60,11 +60,21 @@ def _accumulate(current: str, new: Optional[str]) -> str:
 class RetryNode:
     """Uses fast_model to decide the recovery strategy after a step failure."""
 
-    def __init__(self, fast_model, tool_registry, on_thinking: Optional[Callable[[str], None]] = None, logger=None):
+    def __init__(
+        self,
+        fast_model,
+        tool_registry,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        logger=None,
+        prompt_template: str = RETRY_PROMPT,
+        core_prompt: str = PROMPT_A,
+    ):
         self.fast_model = fast_model
         self.registry = tool_registry
         self.on_thinking = on_thinking
         self.logger = logger or logging.getLogger(__name__)
+        self.prompt_template = prompt_template
+        self.core_prompt = core_prompt
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         plan = list(state.get("plan", []))
@@ -84,8 +94,8 @@ class RetryNode:
             )
             return {"retry_strategy": "escalate", "session_log": log_lines}
 
-        prompt = RETRY_PROMPT.format(
-            prompt_a=PROMPT_A,
+        prompt = self.prompt_template.format(
+            prompt_a=self.core_prompt,
             goal=goal,
             step_description=step.get("description", ""),
             error=last_error,

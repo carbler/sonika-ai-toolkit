@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional
 
 from sonika_ai_toolkit.agents.orchestrator.prompts import MANAGER_PROMPT, PROMPT_A
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
-from sonika_ai_toolkit.agents.orchestrator.utils import ainvoke_with_thinking
+from sonika_ai_toolkit.agents.orchestrator.utils import ainvoke_with_thinking, get_text
 
 
 class ManagerNode:
@@ -41,7 +41,7 @@ class ManagerNode:
             response = await ainvoke_with_thinking(
                 self.fast_model.model, prompt, self.on_thinking
             )
-            raw = response.content
+            raw = get_text(response.content)
             data = self._parse_json(raw)
             
             action = data.get("action", "plan")

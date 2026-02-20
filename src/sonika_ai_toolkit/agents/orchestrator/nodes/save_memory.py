@@ -19,10 +19,19 @@ def _plan_summary(plan: List[Dict]) -> str:
 class SaveMemoryNode:
     """Generates a 2-bullet summary with fast_model and appends it to MEMORY.md."""
 
-    def __init__(self, fast_model, memory_manager, logger=None):
+    def __init__(
+        self,
+        fast_model,
+        memory_manager,
+        logger=None,
+        prompt_template: str = SAVE_MEMORY_PROMPT,
+        core_prompt: str = PROMPT_A,
+    ):
         self.fast_model = fast_model
         self.memory_manager = memory_manager
         self.logger = logger or logging.getLogger(__name__)
+        self.prompt_template = prompt_template
+        self.core_prompt = core_prompt
 
     async def __call__(self, state: OrchestratorState) -> Dict[str, Any]:
         plan = state.get("plan", [])
@@ -30,8 +39,8 @@ class SaveMemoryNode:
         session_id = state.get("session_id", "unknown")
         session_log = state.get("session_log", [])
 
-        prompt = SAVE_MEMORY_PROMPT.format(
-            prompt_a=PROMPT_A,
+        prompt = self.prompt_template.format(
+            prompt_a=self.core_prompt,
             goal=goal,
             plan_summary=_plan_summary(plan),
         )

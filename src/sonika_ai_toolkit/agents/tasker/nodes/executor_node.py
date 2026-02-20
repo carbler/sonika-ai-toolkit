@@ -184,7 +184,7 @@ class ExecutorNode(BaseNode):
         )
          return {"result": error_result, "message": tool_msg}
 
-    def _create_error_output(self, error: str, tool_name: str = None, tool_call_id: str = "unknown") -> Dict[str, Any]:
+    def _create_error_output(self, error: str, tool_name: str = "unknown", tool_call_id: str = "unknown") -> Dict[str, Any]:
         """Create global error output."""
         res = self._create_single_error(error, tool_name, tool_call_id)
         return {
