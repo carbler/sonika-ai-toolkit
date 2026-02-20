@@ -1,26 +1,33 @@
+from typing import Type
 from langchain_community.tools import BaseTool
-# Crear una clase que herede de BaseTool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-class EmailTool(BaseTool, BaseModel):
+
+class _EmailInput(BaseModel):
+    to_email: str = Field(description="Dirección de correo del destinatario.")
+    subject: str = Field(description="Asunto del correo.")
+    message: str = Field(description="Cuerpo del mensaje.")
+
+
+class EmailTool(BaseTool):
     name: str = "EmailTool"
-    description: str = "Esta herramienta envía correos electrónicos."
+    description: str = "Envía un correo electrónico al destinatario indicado."
+    args_schema: Type[BaseModel] = _EmailInput
 
     def _run(self, to_email: str, subject: str, message: str) -> str:
-        
-        if True:
-            return "Correo enviado con éxito."
-        else:
-            return "No se pudo enviar el correo."
-        
+        return "Correo enviado con éxito."
 
-class SaveContacto(BaseTool, BaseModel):
+
+class _SaveContactoInput(BaseModel):
+    nombre: str = Field(description="Nombre completo del contacto.")
+    correo: str = Field(description="Correo electrónico del contacto.")
+    telefono: str = Field(description="Número de teléfono del contacto.")
+
+
+class SaveContacto(BaseTool):
     name: str = "SaveContact"
-    description: str = "Esta herramienta guarda los contactos"
+    description: str = "Guarda un contacto con nombre, correo y teléfono."
+    args_schema: Type[BaseModel] = _SaveContactoInput
 
     def _run(self, nombre: str, correo: str, telefono: str) -> str:
-        
-        if True:
-            return "Contacto guardado"
-        else:
-            return "No se pudo enviar el correo."
+        return "Contacto guardado"

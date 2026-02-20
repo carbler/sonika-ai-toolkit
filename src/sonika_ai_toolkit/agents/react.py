@@ -16,7 +16,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_community.callbacks.manager import get_openai_callback
 from langgraph.config import get_config
 
-from sonika_ai_toolkit.utilities.types import ILanguageModel, Message
+from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel, Message
 
 
 # ============= MODULE-LEVEL HELPERS =============
@@ -385,13 +385,13 @@ class ReactBot:
         if final_response:
             tool_logger.execution_logs.append(f"[BOT] {final_response}")
 
-        return {
-            "content": final_response,
-            "thinking": state.get("thinking") or None,
-            "logs": limited_logs + tool_logger.execution_logs,
-            "tools_executed": tool_logger.tool_executions,
-            "token_usage": token_usage,
-        }
+        return BotResponse(
+            content=final_response,
+            thinking=state.get("thinking") or None,
+            logs=limited_logs + tool_logger.execution_logs,
+            tools_executed=tool_logger.tool_executions,
+            token_usage=token_usage,
+        )
 
     def _initialize_mcp(self, mcp_servers: Dict[str, Any]):
         """Initialize MCP (Model Context Protocol) connections and load available tools."""

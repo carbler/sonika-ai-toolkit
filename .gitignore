@@ -27,6 +27,7 @@ test/
 test_ultimate/
 .agents/
 /myvenv/
-/test_ultimate/reports/*
+# Generated stress-test reports (keep the directory, ignore report files)
+tests/ultimate/reports/*.txt
 ./ruff_cache
 ./pytest_cache
