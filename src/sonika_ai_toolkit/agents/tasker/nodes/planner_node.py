@@ -111,7 +111,7 @@ class PlannerNode(BaseNode):
                     "reasoning": decision.get("reasoning"),
                     "iteration": iteration
                 })
-            except Exception as e:
+            except Exception:
                 pass
 
         return updates

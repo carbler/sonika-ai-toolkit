@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Callable, Dict, Optional
 
-from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState, update_step
+from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 
 
 class StepDispatcherNode:

@@ -36,8 +36,6 @@ class PlannerNode:
         on_plan_generated: Optional[Callable[[List], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
         logger=None,
-        prompt_template: str = PLANNER_PROMPT,
-        core_prompt: str = PROMPT_A,
     ):
         self.strong_model = strong_model
         self.registry = tool_registry
@@ -46,8 +44,6 @@ class PlannerNode:
         self.on_plan_generated = on_plan_generated
         self.on_thinking = on_thinking
         self.logger = logger or logging.getLogger(__name__)
-        self.prompt_template = prompt_template
-        self.core_prompt = core_prompt
 
         # Try to set up structured output; fall back to raw parsing if unavailable.
         try:
@@ -63,8 +59,8 @@ class PlannerNode:
         memory_context = self.memory_manager.read_memory()
         tool_descriptions = self.registry.get_tool_descriptions()
 
-        prompt = self.prompt_template.format(
-            prompt_a=self.core_prompt,
+        prompt = PLANNER_PROMPT.format(
+            prompt_a=PROMPT_A,
             instructions=self.instructions,
             tool_descriptions=tool_descriptions,
             memory_context=memory_context,

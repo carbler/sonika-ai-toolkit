@@ -42,7 +42,7 @@ class ExecutorNode:
         if retry_strategy == "synth_tool":
             if self.synthesizer is None:
                 result_text = "Error: DynamicToolSynthesizer not configured."
-                log_lines.append(f"[executor] synth_tool requested but synthesizer is None.")
+                log_lines.append("[executor] synth_tool requested but synthesizer is None.")
                 new_plan = update_step(new_plan, index, status="failed", error=result_text)
                 return {
                     "plan": new_plan,

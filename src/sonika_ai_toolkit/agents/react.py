@@ -3,10 +3,7 @@ import asyncio
 import logging
 import inspect
 import re
-from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage, ToolMessage, SystemMessage
-from langchain_text_splitters import CharacterTextSplitter
-from langchain_community.vectorstores import FAISS
 from langchain_community.tools import BaseTool
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.graph import StateGraph, END, add_messages
