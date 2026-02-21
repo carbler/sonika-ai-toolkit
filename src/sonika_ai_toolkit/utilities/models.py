@@ -2,9 +2,6 @@ import logging
 import os
 from typing import Generator, Optional
 
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage
 
 from sonika_ai_toolkit.utilities.types import ILanguageModel
@@ -26,6 +23,7 @@ class OpenAILanguageModel(ILanguageModel):
             temperature (float): Temperatura para la generación de respuestas
         """
         from pydantic import SecretStr
+        from langchain_openai import ChatOpenAI
         self.model = ChatOpenAI(
             temperature=temperature, 
             model=model_name, 
@@ -120,6 +118,7 @@ class BedrockLanguageModel(ILanguageModel):
         """
         # Configurar la variable de entorno necesaria para langchain-aws
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key
+        from langchain_aws import ChatBedrock
 
         self.model = ChatBedrock(
             model=model_name,
@@ -218,6 +217,7 @@ class GeminiLanguageModel(ILanguageModel):
             )
             effective_temperature = 1.0
 
+        from langchain_google_genai import ChatGoogleGenerativeAI
         model_kwargs: dict = {}
         if self.supports_thinking:
             budget = thinking_budget if thinking_budget is not None else 8192
@@ -285,21 +285,7 @@ class GeminiLanguageModel(ILanguageModel):
                 yield str(content)
 
 
-class _DeepSeekReasonerChatModel(ChatOpenAI):
-    """ChatOpenAI subclass that captures reasoning_content for DeepSeek R1."""
 
-    def _create_chat_result(self, response, generation_info=None):
-        result = super()._create_chat_result(response, generation_info)
-        try:
-            if not isinstance(response, dict):
-                response = response.model_dump()
-            for i, choice in enumerate(response.get("choices", [])):
-                reasoning = (choice.get("message") or {}).get("reasoning_content")
-                if reasoning and i < len(result.generations):
-                    result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
-        except Exception:
-            pass
-        return result
 
 
 class DeepSeekLanguageModel(ILanguageModel):
@@ -317,9 +303,42 @@ class DeepSeekLanguageModel(ILanguageModel):
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
+        from langchain_openai import ChatOpenAI
+        
+        class _DeepSeekReasonerChatModel(ChatOpenAI):
+            def _create_chat_result(self, response, generation_info=None):
+                result = super()._create_chat_result(response, generation_info)
+                try:
+                    if not isinstance(response, dict):
+                        response = response.model_dump()
+                    for i, choice in enumerate(response.get("choices", [])):
+                        reasoning = (choice.get("message") or {}).get("reasoning_content")
+                        if reasoning and i < len(result.generations):
+                            result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
+                except Exception:
+                    pass
+                return result
+
+        from langchain_openai import ChatOpenAI
+        
+        class _DeepSeekReasonerChatModel(ChatOpenAI):
+            def _create_chat_result(self, response, generation_info=None):
+                result = super()._create_chat_result(response, generation_info)
+                try:
+                    if not isinstance(response, dict):
+                        response = response.model_dump()
+                    for i, choice in enumerate(response.get("choices", [])):
+                        reasoning = (choice.get("message") or {}).get("reasoning_content")
+                        if reasoning and i < len(result.generations):
+                            result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
+                except Exception:
+                    pass
+                return result
+
         is_reasoner = model_name == "deepseek-reasoner" or "r1" in model_name.lower()
         model_class = _DeepSeekReasonerChatModel if is_reasoner else ChatOpenAI
         from pydantic import SecretStr
+        from langchain_openai import ChatOpenAI
         self.model = model_class(
             temperature=temperature,
             model=model_name,
