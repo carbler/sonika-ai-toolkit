@@ -87,7 +87,7 @@ class OrchestratorBot:
             goal = state.get("goal", "")
             
             # Load memory dynamically (simplified)
-            memory_context = self.memory_manager.get_summary()
+            memory_context = self.memory_manager.read_memory()
             
             system_prompt = self.instructions + f"\n\nContexto de memoria:\n{memory_context}"
             
