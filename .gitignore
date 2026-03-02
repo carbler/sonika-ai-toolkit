@@ -32,3 +32,5 @@ tests/ultimate/reports/*.txt
 ./ruff_cache
 ./pytest_cache
 test_memory/
+.ruff_cache
+.pytest_cache

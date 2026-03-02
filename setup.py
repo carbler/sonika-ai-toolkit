@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sonika-ai-toolkit",
-    version="0.3.0",
+    version="0.3.2",
     description="Toolkit para creación de agentes de IA y procesamiento de documentos",
     author="Erley Blanco Carvajal",
     license="MIT License",
@@ -12,13 +12,13 @@ setup(
     package_dir={"": "src"},  # Indica que los paquetes están en el directorio "src"
     include_package_data=True,  # Importante para incluir archivos no-Python definidos en MANIFEST.in
     install_requires=[
-        "langchain-mcp-adapters==0.1.9",
-        "langchain-community==0.3.26",
-        "langchain-core==0.3.66",
-        "langchain-openai==0.3.24",
-        "langgraph==0.4.8",
-        "langgraph-checkpoint==2.1.0",
-        "langgraph-sdk==0.1.70",
+        "langchain-mcp-adapters>=0.1.9",
+        "langchain-community>=0.3.26",
+        "langchain-core>=0.3.66",
+        "langchain-openai>=0.3.24",
+        "langgraph>=0.4.8",
+        "langgraph-checkpoint>=2.1.0",
+        "langgraph-sdk>=0.1.70",
         "dataclasses-json==0.6.7",
         "python-dateutil==2.9.0.post0",
         "pydantic==2.11.7",
