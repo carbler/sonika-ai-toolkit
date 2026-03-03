@@ -1,7 +1,7 @@
 """RunBashTool — executes a shell command in a subprocess."""
 
 import subprocess
-from typing import Type
+from typing import List, Type
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 
@@ -41,3 +41,21 @@ class RunBashTool(BaseTool):
             return f"Error: command timed out after {timeout}s"
         except Exception as e:
             return f"Error: {e}"
+
+
+class BashSafeTool(RunBashTool):
+    """Restricted version of RunBashTool that blocks dangerous commands."""
+
+    name: str = "run_bash_safe"
+    description: str = (
+        "Execute a shell command safely. "
+        "Dangerous operations (rm, sudo, mv, dd, mkfs) are blocked."
+    )
+    risk_hint: int = 0
+    FORBIDDEN: List[str] = ["rm", "sudo", "mv", "dd", "mkfs", ":(){:|:&};:"]
+
+    def _run(self, command: str, timeout: int = 30) -> str:
+        cmd_parts = command.split()
+        if any(part in self.FORBIDDEN for part in cmd_parts):
+            return f"ERROR: Command '{command}' contains forbidden operations in safe mode."
+        return super()._run(command, timeout)

@@ -1,6 +1,6 @@
 """Core tools for OrchestratorBot (opt-in)."""
 
-from sonika_ai_toolkit.tools.core.bash import RunBashTool
+from sonika_ai_toolkit.tools.core.bash import RunBashTool, BashSafeTool
 from sonika_ai_toolkit.tools.core.files import (
     ReadFileTool,
     WriteFileTool,
@@ -12,6 +12,7 @@ from sonika_ai_toolkit.tools.core.search import SearchWebTool
 
 __all__ = [
     "RunBashTool",
+    "BashSafeTool",
     "ReadFileTool",
     "WriteFileTool",
     "ListDirTool",

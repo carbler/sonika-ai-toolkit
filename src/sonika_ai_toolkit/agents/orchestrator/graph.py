@@ -145,13 +145,33 @@ class OrchestratorBot:
                 text = response.content
                 if isinstance(text, list):
                     text = "\n".join(str(p.get("text", "")) for p in text if isinstance(p, dict) and p.get("type") != "thinking")
-                final_report = str(text)
+                text = str(text).strip()
+                if text:
+                    final_report = text
+                else:
+                    # Fallback: model generated empty content after tool execution
+                    # Use output from most recent ToolMessage(s) in history
+                    messages = state.get("messages", [])
+                    tool_outputs = []
+                    for msg in reversed(messages):
+                        if isinstance(msg, ToolMessage):
+                            tool_outputs.insert(0, msg.content)
+                        elif getattr(msg, "tool_calls", None):
+                            break  # Stop at AIMessage that originated this batch
+                    if tool_outputs:
+                        final_report = "\n\n".join(tool_outputs)
 
-            return {
+            result: Dict[str, Any] = {
                 "messages": [response],
                 "thinking": accumulated_thinking,
-                "final_report": final_report
             }
+            # Only write final_report when this is truly the final step.
+            # If the agent is still calling tools, omitting the key leaves the
+            # previous turn's value untouched in state — but crucially it is NOT
+            # emitted to the stream, so the UI never captures a stale response.
+            if not response.tool_calls:
+                result["final_report"] = final_report
+            return result
 
         async def tools_node(state: OrchestratorState) -> Dict[str, Any]:
             last_message = state["messages"][-1]
