@@ -10,6 +10,16 @@ from sonika_ai_toolkit.tools.core.files import (
 )
 from sonika_ai_toolkit.tools.core.http import CallApiTool
 from sonika_ai_toolkit.tools.core.search import SearchWebTool
+from sonika_ai_toolkit.tools.core.python_tool import RunPythonTool
+from sonika_ai_toolkit.tools.core.web import FetchWebPageTool
+from sonika_ai_toolkit.tools.core.datetime_tool import GetDateTimeTool
+from sonika_ai_toolkit.tools.core.email_smtp import EmailSMTPTool
+from sonika_ai_toolkit.tools.core.databases import (
+    SQLiteTool,
+    PostgreSQLTool,
+    MySQLTool,
+    RedisTool,
+)
 
 __all__ = [
     "RunBashTool",
@@ -21,4 +31,12 @@ __all__ = [
     "FindFileTool",
     "CallApiTool",
     "SearchWebTool",
+    "RunPythonTool",
+    "FetchWebPageTool",
+    "GetDateTimeTool",
+    "EmailSMTPTool",
+    "SQLiteTool",
+    "PostgreSQLTool",
+    "MySQLTool",
+    "RedisTool",
 ]

@@ -32,6 +32,7 @@ from sonika_ai_toolkit.interfaces.base import BaseInterface
 # Core tools
 from sonika_ai_toolkit.tools.core import (
     RunBashTool,
+    BashSafeTool,
     ReadFileTool,
     WriteFileTool,
     ListDirTool,
@@ -39,6 +40,14 @@ from sonika_ai_toolkit.tools.core import (
     FindFileTool,
     CallApiTool,
     SearchWebTool,
+    RunPythonTool,
+    FetchWebPageTool,
+    GetDateTimeTool,
+    EmailSMTPTool,
+    SQLiteTool,
+    PostgreSQLTool,
+    MySQLTool,
+    RedisTool,
 )
 
 __all__ = [
@@ -65,6 +74,7 @@ __all__ = [
     "BaseInterface",
     # Tools
     "RunBashTool",
+    "BashSafeTool",
     "ReadFileTool",
     "WriteFileTool",
     "ListDirTool",
@@ -72,4 +82,12 @@ __all__ = [
     "FindFileTool",
     "CallApiTool",
     "SearchWebTool",
+    "RunPythonTool",
+    "FetchWebPageTool",
+    "GetDateTimeTool",
+    "EmailSMTPTool",
+    "SQLiteTool",
+    "PostgreSQLTool",
+    "MySQLTool",
+    "RedisTool",
 ]
