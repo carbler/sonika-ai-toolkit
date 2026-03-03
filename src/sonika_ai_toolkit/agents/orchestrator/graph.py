@@ -10,15 +10,34 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt
+from tenacity import (
+    retry,
+    retry_if_exception,
+    wait_exponential,
+    stop_after_attempt,
+)
 
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
 from sonika_ai_toolkit.tools.registry import ToolRegistry
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
+from sonika_ai_toolkit.agents.orchestrator.events import StatusEvent
+from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
 from sonika_ai_toolkit.agents.react import extract_thinking
 
 
-class OrchestratorBot:
+def _is_rate_limit(exc: Exception) -> bool:
+    """Return True when the exception represents a 429 / quota-exhausted error."""
+    try:
+        from google.api_core.exceptions import ResourceExhausted
+        if isinstance(exc, ResourceExhausted):
+            return True
+    except ImportError:
+        pass
+    return "429" in str(exc) or "quota" in str(exc).lower() or "rate" in str(exc).lower()
+
+
+class OrchestratorBot(IOrchestratorBot):
     """
     Fast, Singleton, ReAct-based Orchestrator with native LangGraph interrupts.
     """
@@ -85,22 +104,42 @@ class OrchestratorBot:
         async def agent_node(state: OrchestratorState) -> Dict[str, Any]:
             mode = state.get("mode", "ask")
             goal = state.get("goal", "")
-            
+
             # Load memory dynamically (simplified)
             memory_context = self.memory_manager.read_memory()
-            
+
             system_prompt = self.instructions + f"\n\nContexto de memoria:\n{memory_context}"
-            
+
             if mode == "plan":
                 system_prompt += "\n\n[MODO PLAN] Ignora todas tus herramientas. Devuelve ÚNICAMENTE un plan detallado paso a paso en texto plano/markdown para resolver la petición del usuario. NO EJECUTES HERRAMIENTAS."
 
             messages = [SystemMessage(content=system_prompt)] + state.get("messages", [])
-            
+
             # Stream response to capture thinking
             accumulated_chunk = None
             thinking_emitted = False
-            
-            try:
+            retry_events: List[StatusEvent] = []
+
+            def _record_retry(retry_state) -> None:
+                wait_s = getattr(retry_state.next_action, "sleep", 0) or 0
+                retry_events.append(StatusEvent(
+                    type="retrying",
+                    reason="rate_limit",
+                    attempt=retry_state.attempt_number,
+                    wait_s=round(float(wait_s), 1),
+                ))
+
+            @retry(
+                retry=retry_if_exception(_is_rate_limit),
+                wait=wait_exponential(multiplier=1, min=2, max=60),
+                stop=stop_after_attempt(5),
+                before_sleep=_record_retry,
+                reraise=True,
+            )
+            async def _call_model_stream():
+                nonlocal accumulated_chunk, thinking_emitted
+                accumulated_chunk = None
+                thinking_emitted = False
                 async for chunk in self.model_with_tools.astream(messages):
                     if isinstance(chunk.content, list):
                         for part in chunk.content:
@@ -111,8 +150,11 @@ class OrchestratorBot:
                                     if self.on_thinking:
                                         self.on_thinking(t)
                     accumulated_chunk = chunk if accumulated_chunk is None else (accumulated_chunk + chunk)
-            except Exception as e:
-                # Fallback to invoke if streaming fails
+
+            try:
+                await _call_model_stream()
+            except Exception:
+                # Fallback to invoke if streaming or retries fail
                 accumulated_chunk = await self.model_with_tools.ainvoke(messages)
 
             if accumulated_chunk is None:
@@ -164,6 +206,7 @@ class OrchestratorBot:
             result: Dict[str, Any] = {
                 "messages": [response],
                 "thinking": accumulated_thinking,
+                "status_events": retry_events,
             }
             # Only write final_report when this is truly the final step.
             # If the agent is still calling tools, omitting the key leaves the
@@ -298,7 +341,8 @@ class OrchestratorBot:
                 "session_id": current_thread,
                 "skills_dir": self.skills_dir,
                 "session_log": [],
-                "tools_executed": []
+                "tools_executed": [],
+                "status_events": [],
             }
             # Add backward compatibility for old scripts using callbacks
             if self.on_message:
@@ -326,12 +370,13 @@ class OrchestratorBot:
         
         initial_state = {
             "goal": goal,
-            "mode": "auto", # Force auto so we don't interrupt old scripts
+            "mode": "auto",  # Force auto so we don't interrupt old scripts
             "messages": [HumanMessage(content=goal)],
             "session_id": current_thread,
             "skills_dir": self.skills_dir,
             "session_log": [],
-            "tools_executed": []
+            "tools_executed": [],
+            "status_events": [],
         }
         
         # In `arun` (used by older tests/chat.py), we just want the final result

@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph, END
 from langchain_community.callbacks.manager import get_openai_callback
 
 from sonika_ai_toolkit.utilities.types import BotResponse
+from sonika_ai_toolkit.agents.base import IConversationBot
 from sonika_ai_toolkit.agents.tasker.state import ChatState
 from sonika_ai_toolkit.agents.tasker.nodes.planner_node import PlannerNode
 from sonika_ai_toolkit.agents.tasker.nodes.executor_node import ExecutorNode
@@ -17,7 +18,7 @@ from sonika_ai_toolkit.agents.tasker.nodes.logger_node import LoggerNode
 from sonika_ai_toolkit.agents.tasker.nodes.validator_node import ValidatorNode
 
 
-class TaskerBot:
+class TaskerBot(IConversationBot):
     """
     Bot with enhanced ReAct pattern and robust instruction following.
     Drop-in replacement for MultiNodeBot but with separate internal architecture.

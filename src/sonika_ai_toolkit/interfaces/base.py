@@ -39,3 +39,11 @@ class BaseInterface(ABC):
     def on_result(self, result: str) -> None:
         """Render the final result/report from the LLM."""
         pass
+
+    def on_retry(self, attempt: int, wait_s: float, reason: str = "rate_limit") -> None:
+        """
+        Called when the LLM is being retried (e.g. after a 429 rate-limit).
+        Default: no-op.  Override to show feedback to the user.
+        Intentionally NOT abstract — backward compatible with existing subclasses.
+        """
+        pass

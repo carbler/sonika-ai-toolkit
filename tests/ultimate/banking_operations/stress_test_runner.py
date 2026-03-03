@@ -30,22 +30,17 @@ load_dotenv()
 # ==========================================
 
 AVAILABLE_BOTS = {
-    "5": {
-        "name": "TaskerBot",
-        "module": "sonika_ai_toolkit.agents.tasker.tasker_bot",
-        "class": "TaskerBot"
-    },
-    "6": {
+    "1": {
         "name": "ReactBot",
         "module": "sonika_ai_toolkit.agents.react",
         "class": "ReactBot"
     },
-    "7": {
-        "name": "ThinkBot",
-        "module": "sonika_ai_toolkit.agents.think",
-        "class": "ThinkBot"
+    "2": {
+        "name": "TaskerBot",
+        "module": "sonika_ai_toolkit.agents.tasker.tasker_bot",
+        "class": "TaskerBot"
     },
-    "8": {
+    "3": {
         "name": "OrchestratorBot",
         "module": "sonika_ai_toolkit.agents.orchestrator.graph",
         "class": "OrchestratorBot"
@@ -140,16 +135,6 @@ class UltimateStressTestRunner:
                 language_model=self.llm,
                 instructions=combined,
                 tools=tools,
-                on_tool_start=noop,
-                on_tool_end=noop,
-                on_tool_error=noop,
-            )
-        elif self.bot_name == "ThinkBot":
-            return self.bot_class(
-                language_model=self.llm,
-                instructions=combined,
-                tools=tools,
-                thinking_budget=8192,
                 on_tool_start=noop,
                 on_tool_end=noop,
                 on_tool_error=noop,
@@ -327,11 +312,11 @@ def select_bot():
     for key, bot_info in AVAILABLE_BOTS.items():
         print(f"  [{key}] {bot_info['name']}")
 
-    choice = input("\nOpción (default 6 = ReactBot): ").strip() or "6"
+    choice = input("\nOpción (default 1 = ReactBot): ").strip() or "1"
 
     if choice not in AVAILABLE_BOTS:
         print("❌ Opción inválida. Usando ReactBot.")
-        choice = "6"
+        choice = "1"
 
     selected = AVAILABLE_BOTS[choice]
     try:

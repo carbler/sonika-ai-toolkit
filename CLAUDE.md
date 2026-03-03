@@ -29,8 +29,11 @@ pytest tests/unit/test_models.py
 # Run specific test
 pytest tests/unit/test_models.py::TestOpenAILanguageModel::test_init_default_model_name
 
+# Run contract tests
+pytest tests/unit/test_orchestrator_contract.py -v
+
 # Run stress test suite (banking scenario, interactive)
-python tests/ultimate/banking_operations/batch_runner.py
+python tests/ultimate/banking_operations/stress_test_runner.py
 
 # Lint
 ruff check .
@@ -43,10 +46,11 @@ ruff check .
 ```
 tests/
 ├── conftest.py          # Shared mocks — no API keys needed
-├── unit/                # 153 tests — isolated, ~3s
-│   └── test_orchestrator_prompts.py  # Prompt injection tests (26 tests)
-├── integration/         # 15 tests — mocked, ~3s
-├── e2e/                 # 9 tests — real API calls, skip if key missing
+├── unit/                # ~165 tests — isolated, ~3s
+│   ├── test_models.py                  # LLM wrapper tests (all providers)
+│   └── test_orchestrator_contract.py  # Interface contract tests (37 tests)
+├── integration/         # Tests with mocked component interaction
+├── e2e/                 # Real API calls, skip if key missing
 │   ├── conftest.py      # ← MODEL CONFIGURATION (change model name here)
 │   ├── test_reactbot.py
 │   └── test_orchestratorbot.py
@@ -76,17 +80,34 @@ pytest -m slow        # Slower tests
 
 ### What e2e tests assert
 - `result.content` is a non-empty string
-- Both `EmailTool` and `SaveContact` appear in `result.tools_executed`
-- `result.success` is `True` (OrchestratorBot)
-- Approval callbacks are invoked when `risk_threshold=-1`
+- Both `EmailTool` and `SaveContacto` appear in `result.tools_executed`
+- Stream events yield at least one `"messages"` or `"updates"` event (OrchestratorBot)
 
 ## Architecture
 
 **sonika-ai-toolkit** is a Python library for building conversational AI agents using LangChain and LangGraph, with multi-provider LLM support (OpenAI, DeepSeek, Google Gemini, Amazon Bedrock).
 
+### Interface Hierarchy (`agents/base.py`, `agents/orchestrator/interface.py`)
+
+All agents share a common ABC lineage:
+
+```
+IBot (ABC)
+├── IConversationBot    — ReactBot, TaskerBot
+│     get_response(user_input, messages, logs) → BotResponse
+└── IOrchestratorBot    — OrchestratorBot
+      astream_events(goal, mode, thread_id) → AsyncGenerator
+      arun(goal, context, thread_id) → BotResponse
+      run(goal, context, thread_id) → BotResponse
+      set_resume_command(resume_data) → None
+      a_prewarm() → None
+```
+
+Consumers should type-hint against interfaces, not concrete classes.
+
 ### Unified Response Type (`BotResponse`)
 
-All agents return a `BotResponse` — a `dict` subclass that is **fully backward-compatible** with plain dict access and also exposes typed properties:
+All agents return a `BotResponse` — a `dict` subclass fully backward-compatible with plain dict access:
 
 ```python
 from sonika_ai_toolkit.utilities.types import BotResponse
@@ -98,142 +119,137 @@ result = bot.run(...)            # OrchestratorBot
 result["content"]
 result.get("thinking")
 
-# property-style (new, typed)
+# property-style (typed)
 result.content          # str
 result.thinking         # Optional[str]
 result.logs             # List[str]
 result.tools_executed   # List[dict]
 result.token_usage      # {prompt_tokens, completion_tokens, total_tokens}
-result.success          # bool (OrchestratorBot; defaults True for others)
-result.plan             # List[dict] (OrchestratorBot)
-result.session_id       # Optional[str] (OrchestratorBot)
-result.goal             # Optional[str] (OrchestratorBot)
+result.success          # bool
+result.plan             # List[dict]
+result.session_id       # Optional[str]
+result.goal             # Optional[str]
 ```
+
+### Stream Event Types (`agents/orchestrator/events.py`)
+
+TypedDicts forming the stable contract for `astream_events()` payloads:
+
+```python
+from sonika_ai_toolkit.agents.orchestrator.events import (
+    AgentUpdate, ToolsUpdate, StatusEvent, ToolRecord
+)
+
+# StatusEvent — emitted when a rate-limit retry occurs
+ev: StatusEvent = {"type": "retrying", "reason": "rate_limit", "attempt": 1, "wait_s": 2.0}
+
+# AgentUpdate — payload of "agent" node in "updates" stream mode
+update: AgentUpdate = {"final_report": "...", "status_events": [...]}
+
+# ToolsUpdate — payload of "tools" node in "updates" stream mode
+update: ToolsUpdate = {"tools_executed": [...]}
+```
+
+Import these types in consumers instead of hardcoding dict keys.
 
 ### Core Abstractions (`src/sonika_ai_toolkit/utilities/`)
 
 - `types.py`: `BotResponse` (unified response), `ILanguageModel`, `Message`, `ResponseModel`, `IEmbeddings`, `FileProcessorInterface`
-- `models.py`: `OpenAILanguageModel`, `GeminiLanguageModel`, `BedrockLanguageModel`, `DeepSeekLanguageModel`. All expose `predict()`, `invoke()`, and `stream_response()`.
+- `models.py`: `OpenAILanguageModel`, `GeminiLanguageModel`, `BedrockLanguageModel`, `DeepSeekLanguageModel`. All expose `predict()`, `invoke()`, and `stream_response()`. All provider imports (`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatBedrock`) are at module level — required for correct `unittest.mock.patch` behavior in tests.
 
 ### Agents (`src/sonika_ai_toolkit/agents/`)
 
-Four architectures for different use cases:
+Three architectures for different use cases:
 
-1. **ReactBot** (`react.py`): Standard ReAct loop via LangGraph. Handles tool execution, token tracking, `_InternalToolLogger` callback. Returns `BotResponse`.
+1. **ReactBot** (`react.py`): Standard ReAct loop via LangGraph. Implements `IConversationBot`. Handles tool execution, token tracking, `_InternalToolLogger` callback. Returns `BotResponse`.
 
-2. **ThinkBot** (`think.py`): Extends ReactBot with explicit reasoning separation. Extracts thinking from Gemini native thinking, DeepSeek R1 reasoner output, or fallback `<think>` tags. *(module not currently bundled — import-skipped automatically)*
+2. **TaskerBot** (`tasker/`): Planner→Executor→Validator→Output→Logger graph for complex multi-step tasks. Implements `IConversationBot`. Nodes under `tasker/nodes/`. Returns `BotResponse`.
 
-3. **TaskerBot** (`tasker/`): Planner→Executor→Validator→Output→Logger graph for complex multi-step tasks. Nodes under `tasker/nodes/`. Returns `BotResponse`.
-
-4. **OrchestratorBot** (`orchestrator/`): Autonomous orchestration with persistent memory (MEMORY.md), per-step risk gate + human approval callback, multi-model routing (strong/fast/code), structured retry with anti-loop protection, and dynamic tool synthesis. Returns `BotResponse`.
-   - `bot.run(goal, context="")` — synchronous entry point
-   - `memory_path` — directory for MEMORY.md, SKILLS.md, session logs
-   - `risk_threshold=-1` forces all steps through `on_human_approval` callback
-   - `prompts=OrchestratorPrompts(...)` — injectable prompt templates (see below)
+3. **OrchestratorBot** (`orchestrator/`): Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API. Implements `IOrchestratorBot`.
 
 ### OrchestratorBot — How it works
 
-The orchestrator runs a **LangGraph state machine** with 11 nodes. Each `run(goal)` call:
+The orchestrator runs a **compact ReAct loop** compiled as a LangGraph state machine:
 
 ```
-load_memory → planner → step_dispatcher → risk_gate → [human_approval] → executor
-                                    ↑                                         ↓
-                             escalate ← retry ←──────────────────────── evaluator
-                                                                              ↓
-                                                             reporter → save_memory → END
+agent_node ──(tool_calls?)──► tools_node ──► agent_node
+     │                                              │
+     └─────────────── (no tool calls) ─────────── END
 ```
 
-**Execution flow per step:**
-1. `load_memory` — reads MEMORY.md + SKILLS.md, registers any previously synthesized tools
-2. `planner` (strong_model) — decomposes the goal into a JSON step list
-3. `step_dispatcher` — picks the next pending step; routes to `reporter` when all done
-4. `risk_gate` — compares `step.risk_level` vs `risk_threshold`; routes to `human_approval` if above threshold
-5. `human_approval` — calls `on_human_approval(step)` callback; skips step if returns False
-6. `executor` — invokes the tool; supports `synth_tool` strategy (generates a new tool at runtime)
-7. `evaluator` (fast_model) — judges step success and whether the overall goal is already met
-8. `retry` (fast_model) — on failure: picks `retry_params | alt_tool | synth_tool | escalate`; anti-loop hash check
-9. `escalate` — marks step as failed, resets retry counters, advances to next step
-10. `reporter` (fast_model) — writes the final 2-5 paragraph report
-11. `save_memory` (fast_model) — generates 2-bullet summary, appends to MEMORY.md
+Each `run(goal)` call:
 
-**Model routing:**
-- `strong_model` — used only by `planner`
-- `fast_model` — used by `evaluator`, `retry`, `reporter`, `save_memory`
-- `code_model` — used by `DynamicToolSynthesizer` when a `synth_tool` strategy is chosen
+1. **`agent_node`** — streams the LLM response via `astream`, accumulates tool calls and thinking content. A tenacity retry decorator wraps the stream call; on 429/rate-limit it waits exponentially (up to 5 attempts) and emits `StatusEvent` objects into `state["status_events"]` so consumers can show progress.
+2. **`tools_node`** — iterates tool calls; if `mode="ask"` and `tool.risk_level > 0`, fires a **native LangGraph interrupt** and waits for `set_resume_command()` before executing.
+3. Loop continues until the model stops calling tools, then final text is stored as `final_report`.
 
-**Risk levels:** 0=safe (read-only), 1=low, 2=medium, 3=high (external/financial). Steps at or below `risk_threshold` are auto-approved.
+**Key APIs:**
+- `bot.run(goal, context="")` — synchronous (wraps `arun`)
+- `await bot.arun(goal)` — async, runs in `"auto"` mode (no interrupts)
+- `async for stream_mode, payload in bot.astream_events(goal, mode="ask")` — streaming with interrupt support
+- `bot.set_resume_command(resume_data)` — provide approval data after an interrupt
+- `await bot.a_prewarm()` — pre-warm TCP/TLS connection
+- `memory_path` — directory for MEMORY.md and session logs
 
-### OrchestratorBot — Prompt Injection
+**Mode parameter:**
+- `"ask"` (default) — pauses on risky tool calls via LangGraph interrupt
+- `"auto"` — executes all tools without interrupting
+- `"plan"` — forces the model to return a plan as text (tool calls stripped)
 
-All LLM prompts are externalised in `orchestrator/prompts.py` and injectable via `OrchestratorPrompts`:
+**Retry with rate-limit events:**
 
 ```python
-from sonika_ai_toolkit.agents.orchestrator.prompts import OrchestratorPrompts
-from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
-
-# Override only the core rules — all other prompts stay default
-prompts = OrchestratorPrompts(
-    core="You are a financial compliance bot. Never approve transfers above $10k.",
-)
-
-# Override a specific stage template (must keep all {placeholders} the template uses)
-prompts = OrchestratorPrompts(
-    reporter="""
-{prompt_a}
-
-## Objective
-{goal}
-
-## Steps executed
-{plan_summary}
-
-Write a ONE-paragraph executive summary only.
-{tool_outputs}
-""",
-)
-
-bot = OrchestratorBot(
-    strong_model=...,
-    fast_model=...,
-    instructions="...",
-    prompts=prompts,
-)
+# Consuming status events from the stream
+async for stream_mode, payload in bot.astream_events(goal):
+    if stream_mode == "updates":
+        for node_name, update in payload.items():
+            if node_name == "agent":
+                for ev in update.get("status_events", []):
+                    if ev["type"] == "retrying":
+                        print(f"Rate limit — retry {ev['attempt']}, wait {ev['wait_s']}s")
 ```
-
-**`OrchestratorPrompts` fields and their placeholders:**
-
-| Field | Used by node | Required placeholders |
-|---|---|---|
-| `core` | injected as `{prompt_a}` into all templates | — |
-| `planner` | `PlannerNode` | `{prompt_a}` `{instructions}` `{tool_descriptions}` `{memory_context}` `{goal}` `{context}` |
-| `evaluator` | `EvaluatorNode` | `{prompt_a}` `{goal}` `{step_description}` `{tool_output}` `{plan_summary}` |
-| `retry` | `RetryNode` | `{prompt_a}` `{goal}` `{step_description}` `{error}` `{tool_descriptions}` `{retry_history}` |
-| `reporter` | `ReporterNode` | `{prompt_a}` `{goal}` `{plan_summary}` `{tool_outputs}` |
-| `save_memory` | `SaveMemoryNode` | `{prompt_a}` `{goal}` `{plan_summary}` |
-
-Node references after construction: `bot._nodes["planner"]`, `bot._nodes["evaluator"]`, etc.
 
 ### Tools (`src/sonika_ai_toolkit/tools/`)
 
 - `registry.py`: `ToolRegistry` — register/get/list; `get_tool_descriptions()` includes param names for LLM prompts
-- `synthesizer.py`: `DynamicToolSynthesizer` — LLM generates Python `BaseTool` code at runtime, writes to `skills_dir/`
-- `core/`: `RunBashTool`, `ReadFileTool`, `WriteFileTool`, `ListDirTool`, `DeleteFileTool`, `CallApiTool`, `SearchWebTool` (opt-in, not auto-registered)
+- `core/`: `RunBashTool`, `ReadFileTool`, `WriteFileTool`, `ListDirTool`, `DeleteFileTool`, `FindFileTool`, `CallApiTool`, `SearchWebTool` (opt-in, not auto-registered)
 - `integrations.py`: `EmailTool`, `SaveContacto` — must have `args_schema` (Pydantic) for correct LLM param generation
 
 ### Other Components
 
 - `classifiers/text.py`: `TextClassifier` — structured output classification
 - `document_processing/`: `DocumentProcessor` for PDF, DOCX, XLSX, PPTX, TXT
+- `interfaces/base.py`: `BaseInterface` — ABC for UI layers. Implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`. `on_retry(attempt, wait_s, reason)` has a default no-op — override to show retry feedback.
 
 ### Provider-Specific Gotchas
 
-- **Gemini**: System message must be first; messages must alternate User/AI. Thinking models require `temperature=1.0`. `response.content` is a list when `include_thoughts=True` — always use `get_text()` or `ainvoke_with_thinking()`.
-- **DeepSeek reasoner** (`deepseek-reasoner`): Does not support tool calling. `reasoning_content` is injected via `_create_chat_result` override.
-- **LangGraph**: Requires a checkpointer (e.g., `MemorySaver`) for state persistence.
-- **Bedrock**: Configurable via region and model ID parameters.
-- **OrchestratorBot**: All LLM nodes use `ainvoke_with_thinking()` from `orchestrator/utils.py` — always returns `AIMessage(content=clean_string)`.
+- **Gemini**: Thinking models (`gemini-2.5-*`, `*-thinking`, `*thinking-exp*`) require `temperature=1.0` — automatically overridden with a warning. `response.content` is a list when `include_thoughts=True`.
+- **Gemini thinking detection**: Only `gemini-2.5-*`, markers `"-thinking"`, `"thinking-exp"` trigger thinking mode. `gemini-3-*` models are **not** treated as thinking models.
+- **DeepSeek reasoner** (`deepseek-reasoner`, or any model with `r1` in the name): Uses `_DeepSeekReasonerChatModel` (module-level subclass of `ChatOpenAI`). `reasoning_content` is injected into `additional_kwargs` via `_create_chat_result` override.
+- **LangGraph**: Requires a checkpointer (`MemorySaver`) for state persistence. `status_events` uses `operator.add` reducer in `OrchestratorState`.
+- **Bedrock**: `BedrockLanguageModel.__init__` sets `AWS_BEARER_TOKEN_BEDROCK` env var automatically.
+- **Mock patching**: All provider imports are module-level in `models.py` — `patch("sonika_ai_toolkit.utilities.models.ChatOpenAI")` works correctly.
 
-### Package Exports
+### Public API (`src/sonika_ai_toolkit/__init__.py`)
 
-`src/sonika_ai_toolkit/agents/__init__.py` exports `ReactBot`, `ThinkBot` (None if not installed), `TaskerBot`, `OrchestratorBot`.
-`src/sonika_ai_toolkit/utilities/__init__.py` exports `BotResponse`.
+Top-level imports for the most common components:
+
+```python
+from sonika_ai_toolkit import (
+    # Orchestrator
+    OrchestratorBot, IOrchestratorBot,
+    # Stream event types
+    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent,
+    # Response type
+    BotResponse, ILanguageModel,
+    # LLM providers
+    GeminiLanguageModel, OpenAILanguageModel,
+    BedrockLanguageModel, DeepSeekLanguageModel,
+    # UI contract
+    BaseInterface,
+    # Core tools
+    RunBashTool, ReadFileTool, WriteFileTool,
+    ListDirTool, DeleteFileTool, FindFileTool,
+    CallApiTool, SearchWebTool,
+)
+```

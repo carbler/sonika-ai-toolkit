@@ -14,6 +14,7 @@ from langchain_community.callbacks.manager import get_openai_callback
 from langgraph.config import get_config
 
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel, Message
+from sonika_ai_toolkit.agents.base import IConversationBot
 
 
 # ============= MODULE-LEVEL HELPERS =============
@@ -212,7 +213,7 @@ class _InternalToolLogger(BaseCallbackHandler):
 
 # ============= MAIN BOT CLASS =============
 
-class ReactBot:
+class ReactBot(IConversationBot):
     """
     Modern LangGraph-based conversational bot with MCP support and optional thinking/reasoning.
 

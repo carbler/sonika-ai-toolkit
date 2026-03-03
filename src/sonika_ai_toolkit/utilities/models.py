@@ -3,8 +3,29 @@ import os
 from typing import Generator, Optional
 
 from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_aws import ChatBedrock
 
 from sonika_ai_toolkit.utilities.types import ILanguageModel
+
+
+class _DeepSeekReasonerChatModel(ChatOpenAI):
+    """ChatOpenAI subclass that injects DeepSeek's ``reasoning_content`` field
+    into ``additional_kwargs`` so callers can read it like any other provider."""
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        try:
+            if not isinstance(response, dict):
+                response = response.model_dump()
+            for i, choice in enumerate(response.get("choices", [])):
+                reasoning = (choice.get("message") or {}).get("reasoning_content")
+                if reasoning and i < len(result.generations):
+                    result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
+        except Exception:
+            pass
+        return result
 
 
 class OpenAILanguageModel(ILanguageModel):
@@ -16,14 +37,13 @@ class OpenAILanguageModel(ILanguageModel):
     def __init__(self, api_key: str, model_name: str = "gpt-4o-mini", temperature: float = 0.7):
         """
         Inicializa el modelo de lenguaje de OpenAI.
-        
+
         Args:
             api_key (str): Clave API de OpenAI
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
         from pydantic import SecretStr
-        from langchain_openai import ChatOpenAI
         self.model = ChatOpenAI(
             temperature=temperature, 
             model=model_name, 
@@ -118,8 +138,6 @@ class BedrockLanguageModel(ILanguageModel):
         """
         # Configurar la variable de entorno necesaria para langchain-aws
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key
-        from langchain_aws import ChatBedrock
-
         self.model = ChatBedrock(
             model=model_name,
             region_name=region_name,
@@ -206,7 +224,7 @@ class GeminiLanguageModel(ILanguageModel):
         logger = logging.getLogger(__name__)
         self.supports_thinking = any(
             marker in model_name.lower()
-            for marker in ["-thinking", "thinking-exp", "gemini-3", "gemini-2.5"]
+            for marker in ["-thinking", "thinking-exp", "gemini-2.5"]
         )
 
         effective_temperature = temperature
@@ -217,7 +235,6 @@ class GeminiLanguageModel(ILanguageModel):
             )
             effective_temperature = 1.0
 
-        from langchain_google_genai import ChatGoogleGenerativeAI
         model_kwargs: dict = {}
         if self.supports_thinking:
             budget = thinking_budget if thinking_budget is not None else 8192
@@ -303,47 +320,14 @@ class DeepSeekLanguageModel(ILanguageModel):
             model_name (str): Nombre del modelo a utilizar
             temperature (float): Temperatura para la generación de respuestas
         """
-        from langchain_openai import ChatOpenAI
-        
-        class _DeepSeekReasonerChatModel(ChatOpenAI):
-            def _create_chat_result(self, response, generation_info=None):
-                result = super()._create_chat_result(response, generation_info)
-                try:
-                    if not isinstance(response, dict):
-                        response = response.model_dump()
-                    for i, choice in enumerate(response.get("choices", [])):
-                        reasoning = (choice.get("message") or {}).get("reasoning_content")
-                        if reasoning and i < len(result.generations):
-                            result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
-                except Exception:
-                    pass
-                return result
-
-        from langchain_openai import ChatOpenAI
-        
-        class _DeepSeekReasonerChatModel(ChatOpenAI):
-            def _create_chat_result(self, response, generation_info=None):
-                result = super()._create_chat_result(response, generation_info)
-                try:
-                    if not isinstance(response, dict):
-                        response = response.model_dump()
-                    for i, choice in enumerate(response.get("choices", [])):
-                        reasoning = (choice.get("message") or {}).get("reasoning_content")
-                        if reasoning and i < len(result.generations):
-                            result.generations[i].message.additional_kwargs["reasoning_content"] = reasoning
-                except Exception:
-                    pass
-                return result
-
+        from pydantic import SecretStr
         is_reasoner = model_name == "deepseek-reasoner" or "r1" in model_name.lower()
         model_class = _DeepSeekReasonerChatModel if is_reasoner else ChatOpenAI
-        from pydantic import SecretStr
-        from langchain_openai import ChatOpenAI
         self.model = model_class(
             temperature=temperature,
             model=model_name,
             api_key=SecretStr(api_key),
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com",
         )
         self.supports_thinking = is_reasoner
 

@@ -47,13 +47,13 @@ class TestOpenAILanguageModel:
         with _patch_chat_openai() as MockChatOpenAI:
             OpenAILanguageModel(api_key="key")
             _, kwargs = MockChatOpenAI.call_args
-            assert kwargs.get("model_name") == "gpt-4o-mini"
+            assert kwargs.get("model") == "gpt-4o-mini"
 
     def test_init_custom_model_name(self):
         with _patch_chat_openai() as MockChatOpenAI:
             OpenAILanguageModel(api_key="key", model_name="gpt-4o")
             _, kwargs = MockChatOpenAI.call_args
-            assert kwargs.get("model_name") == "gpt-4o"
+            assert kwargs.get("model") == "gpt-4o"
 
     def test_init_passes_temperature(self):
         with _patch_chat_openai() as MockChatOpenAI:
@@ -142,8 +142,8 @@ class TestGeminiLanguageModel:
         ("gemini-2.5-flash", True),
         ("gemini-2.5-pro", True),
         ("gemini-2.0-flash-thinking-exp", True),
-        ("gemini-pro-preview", True),
-        ("gemini-3-flash-preview", False),  # "flash" alone no longer triggers it
+        ("gemini-pro-preview", False),    # standard preview — no thinking
+        ("gemini-3-flash-preview", False), # non-existent/fake model — not a thinking model
         ("gemini-1.0-pro", False),
     ])
     def test_supports_thinking_detection(self, model_name, expected):
@@ -231,7 +231,7 @@ class TestBedrockLanguageModel:
         with _patch_bedrock() as MockBedrock:
             BedrockLanguageModel(api_key="tok", region_name="us-east-1")
             _, kwargs = MockBedrock.call_args
-            assert kwargs.get("model_id") == "amazon.nova-micro-v1:0"
+            assert kwargs.get("model") == "amazon.nova-micro-v1:0"
 
 
 # ---------------------------------------------------------------------------

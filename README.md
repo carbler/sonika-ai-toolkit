@@ -30,8 +30,11 @@ AWS_REGION=us-east-1
 ## Key Features
 
 - **Multi-Model Support**: Agnostic integration with OpenAI, DeepSeek, Google Gemini, and Amazon Bedrock.
-- **Conversational Agent**: Robust agent (`ReactBot`) with native tool execution capabilities and LangGraph state management.
-- **Tasker Agent**: Advanced planner-executor agent (`TaskerBot`) for complex multi-step tasks.
+- **Conversational Agent**: Robust agent (`ReactBot`) with native tool execution and LangGraph state management.
+- **Tasker Agent**: Planner-executor agent (`TaskerBot`) for complex multi-step tasks.
+- **Orchestrator Agent**: Autonomous goal-driven agent (`OrchestratorBot`) with async streaming, persistent memory, LangGraph interrupts for human-in-the-loop, and rate-limit retry with progress events.
+- **Formal Interface Contracts**: `IConversationBot` and `IOrchestratorBot` ABCs ensure stable APIs across agent implementations.
+- **Typed Stream Events**: `StatusEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
 - **Structured Classification**: Text classification with strongly typed outputs.
 - **Document Processing**: Utilities for processing PDFs, DOCX, and other formats with intelligent chunking.
 - **Custom Tools**: Easy integration of custom tools via Pydantic and LangChain.
@@ -48,25 +51,69 @@ from sonika_ai_toolkit.agents.react import ReactBot
 from sonika_ai_toolkit.utilities.types import Message
 from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 
-# Load environment variables
 load_dotenv()
 
-# Configure model
-api_key = os.getenv("OPENAI_API_KEY")
-language_model = OpenAILanguageModel(api_key, model_name='gpt-4o-mini', temperature=0.7)
+language_model = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"), model_name="gpt-4o-mini")
+bot = ReactBot(language_model, instructions="You are a helpful assistant", tools=[EmailTool()])
 
-# Configure tools
-tools = [EmailTool()]
-
-# Create agent instance
-bot = ReactBot(language_model, instructions="You are a helpful assistant", tools=tools)
-
-# Get response
-user_message = 'Send an email to erley@gmail.com saying hello'
 messages = [Message(content="My name is Erley", is_bot=False)]
-response = bot.get_response(user_message, messages, logs=[])
+response = bot.get_response("Send an email to erley@gmail.com saying hello", messages, logs=[])
 
 print(response["content"])
+```
+
+### Autonomous Orchestrator (sync)
+
+```python
+import os
+from dotenv import load_dotenv
+from sonika_ai_toolkit import OrchestratorBot, OpenAILanguageModel
+from sonika_ai_toolkit.tools.integrations import EmailTool, SaveContacto
+
+load_dotenv()
+
+llm = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"), model_name="gpt-4o-mini")
+bot = OrchestratorBot(
+    strong_model=llm,
+    fast_model=llm,
+    instructions="You are a communications assistant.",
+    tools=[EmailTool(), SaveContacto()],
+    memory_path="/tmp/my_bot_memory",
+)
+
+result = bot.run("Send a hello email to erley@gmail.com and save him as a contact.")
+print(result.content)
+print("Tools used:", [t["tool_name"] for t in result.tools_executed])
+```
+
+### Autonomous Orchestrator (async streaming)
+
+```python
+import asyncio
+from sonika_ai_toolkit import OrchestratorBot, OpenAILanguageModel, StatusEvent
+from sonika_ai_toolkit.tools.integrations import EmailTool
+
+async def main():
+    llm = OpenAILanguageModel("sk-...", model_name="gpt-4o-mini")
+    bot = OrchestratorBot(
+        strong_model=llm, fast_model=llm,
+        instructions="You are a helpful assistant.",
+        tools=[EmailTool()],
+        memory_path="/tmp/bot_memory",
+    )
+
+    async for stream_mode, payload in bot.astream_events("Send hello to erley@gmail.com", mode="auto"):
+        if stream_mode == "updates":
+            for node_name, update in payload.items():
+                if node_name == "agent":
+                    # Show rate-limit retry progress
+                    for ev in update.get("status_events", []):
+                        if ev["type"] == "retrying":
+                            print(f"↻ Rate limit — retry {ev['attempt']}, wait {ev['wait_s']}s")
+                    if update.get("final_report"):
+                        print("Result:", update["final_report"])
+
+asyncio.run(main())
 ```
 
 ### Text Classification
@@ -77,16 +124,12 @@ from sonika_ai_toolkit.classifiers.text import TextClassifier
 from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 from pydantic import BaseModel, Field
 
-# Define classification structure
 class Classification(BaseModel):
     intention: str = Field()
     sentiment: str = Field(..., enum=["happy", "neutral", "sad", "excited"])
 
-# Initialize classifier
 model = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"))
 classifier = TextClassifier(llm=model, validation_class=Classification)
-
-# Classify text
 result = classifier.classify("I am very happy today!")
 print(result.result)
 ```
@@ -94,22 +137,92 @@ print(result.result)
 ## Available Components
 
 ### Agents
-- **ReactBot**: Standard agent using LangGraph workflow.
-- **TaskerBot**: Advanced planner agent for multi-step tasks.
+
+| Agent | Class | Interface | Use Case |
+|-------|-------|-----------|----------|
+| **ReactBot** | `agents.react.ReactBot` | `IConversationBot` | Single-turn conversation + tools |
+| **TaskerBot** | `agents.tasker.TaskerBot` | `IConversationBot` | Multi-step planner-executor |
+| **OrchestratorBot** | `agents.orchestrator.graph.OrchestratorBot` | `IOrchestratorBot` | Autonomous goal-driven agent |
+
+All agents return `BotResponse` — a `dict` subclass with typed property accessors (`.content`, `.thinking`, `.tools_executed`, `.token_usage`).
+
+### Interfaces
+
+```python
+from sonika_ai_toolkit.agents.base import IBot, IConversationBot
+from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
+```
+
+### Stream Event Types
+
+```python
+from sonika_ai_toolkit.agents.orchestrator.events import (
+    StatusEvent,   # rate-limit retry event
+    AgentUpdate,   # "agent" node payload in "updates" stream
+    ToolsUpdate,   # "tools" node payload in "updates" stream
+    ToolRecord,    # individual tool execution record
+)
+```
+
+### Language Models
+
+```python
+from sonika_ai_toolkit.utilities.models import (
+    OpenAILanguageModel,    # OpenAI (gpt-4o, gpt-4o-mini, ...)
+    GeminiLanguageModel,    # Google Gemini (gemini-2.5-flash, ...)
+    DeepSeekLanguageModel,  # DeepSeek (deepseek-chat, deepseek-reasoner, ...)
+    BedrockLanguageModel,   # Amazon Bedrock (amazon.nova-micro-v1:0, ...)
+)
+```
 
 ### Utilities
-- **ILanguageModel**: Unified interface for LLM providers.
-- **DocumentProcessor**: Text extraction and chunking utilities.
+
+- **`ILanguageModel`**: Unified interface for LLM providers (`predict`, `invoke`, `stream_response`).
+- **`BotResponse`**: Unified response type — dict-compatible + typed properties.
+- **`BaseInterface`**: ABC for UI layers — implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`, `on_retry`.
+- **`DocumentProcessor`**: Text extraction and chunking for PDF, DOCX, XLSX, PPTX.
+
+### Top-Level Imports
+
+```python
+from sonika_ai_toolkit import (
+    OrchestratorBot, IOrchestratorBot,
+    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent,
+    BotResponse, ILanguageModel,
+    GeminiLanguageModel, OpenAILanguageModel,
+    BedrockLanguageModel, DeepSeekLanguageModel,
+    BaseInterface,
+    RunBashTool, ReadFileTool, WriteFileTool,
+    ListDirTool, DeleteFileTool, FindFileTool,
+    CallApiTool, SearchWebTool,
+)
+```
 
 ## Project Structure
 
 ```
 src/sonika_ai_toolkit/
-├── agents/             # Bot implementations
-├── classifiers/        # Text classification tools
-├── document_processing/# PDF and document tools
-├── tools/             # Tool definitions
-└── utilities/         # Models and common types
+├── agents/
+│   ├── base.py              # IBot, IConversationBot ABCs
+│   ├── react.py             # ReactBot(IConversationBot)
+│   ├── tasker/              # TaskerBot(IConversationBot)
+│   └── orchestrator/
+│       ├── graph.py         # OrchestratorBot(IOrchestratorBot)
+│       ├── interface.py     # IOrchestratorBot ABC
+│       ├── events.py        # Stream event TypedDicts
+│       ├── state.py         # OrchestratorState (LangGraph)
+│       └── memory.py        # MemoryManager (MEMORY.md)
+├── classifiers/             # Text classification tools
+├── document_processing/     # PDF and document tools
+├── interfaces/
+│   └── base.py              # BaseInterface ABC for UI layers
+├── tools/
+│   ├── core/                # RunBashTool, ReadFileTool, etc.
+│   ├── integrations.py      # EmailTool, SaveContacto
+│   └── registry.py          # ToolRegistry
+└── utilities/
+    ├── models.py            # LLM provider wrappers
+    └── types.py             # BotResponse, ILanguageModel, Message
 ```
 
 ## License
