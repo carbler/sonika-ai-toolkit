@@ -1,6 +1,7 @@
-"""File system tools: read, write, list, delete."""
+"""File system tools: read, write, list, delete, find."""
 
 import os
+import fnmatch
 from typing import Type
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
@@ -86,3 +87,29 @@ class DeleteFileTool(BaseTool):
             return f"Deleted {path}"
         except Exception as e:
             return f"Error deleting {path}: {e}"
+
+
+class _FindFileInput(BaseModel):
+    name: str = Field(description="Filename or glob pattern, case-insensitive (e.g. 'readme', '*.md', 'config*').")
+    directory: str = Field(default=".", description="Root directory to search in. Defaults to current directory.")
+
+
+class FindFileTool(BaseTool):
+    name: str = "find_file"
+    description: str = (
+        "Search for files matching a name or glob pattern (case-insensitive) "
+        "within a directory tree. Returns all matching paths."
+    )
+    args_schema: Type[BaseModel] = _FindFileInput
+    risk_hint: int = 0
+
+    def _run(self, name: str, directory: str = ".") -> str:
+        base = os.path.abspath(directory)
+        results = []
+        for root, _dirs, files in os.walk(base):
+            for f in files:
+                if fnmatch.fnmatch(f.lower(), name.lower()):
+                    results.append(os.path.join(root, f))
+        if not results:
+            return f"No files found matching '{name}' in {base}"
+        return "\n".join(results)

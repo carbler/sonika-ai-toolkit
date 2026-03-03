@@ -6,6 +6,7 @@ from sonika_ai_toolkit.tools.core.files import (
     WriteFileTool,
     ListDirTool,
     DeleteFileTool,
+    FindFileTool,
 )
 from sonika_ai_toolkit.tools.core.http import CallApiTool
 from sonika_ai_toolkit.tools.core.search import SearchWebTool
@@ -17,6 +18,7 @@ __all__ = [
     "WriteFileTool",
     "ListDirTool",
     "DeleteFileTool",
+    "FindFileTool",
     "CallApiTool",
     "SearchWebTool",
 ]
