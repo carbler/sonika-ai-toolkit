@@ -186,7 +186,13 @@ class OrchestratorBot(IOrchestratorBot):
                 # Clean content
                 text = response.content
                 if isinstance(text, list):
-                    text = "\n".join(str(p.get("text", "")) for p in text if isinstance(p, dict) and p.get("type") != "thinking")
+                    parts = []
+                    for p in text:
+                        if isinstance(p, str):
+                            parts.append(p)
+                        elif isinstance(p, dict) and p.get("type") != "thinking":
+                            parts.append(str(p.get("text", "") or p.get("content", "")))
+                    text = "".join(parts)
                 text = str(text).strip()
                 if text:
                     final_report = text

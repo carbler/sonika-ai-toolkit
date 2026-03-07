@@ -105,10 +105,12 @@ class FindFileTool(BaseTool):
 
     def _run(self, name: str, directory: str = ".") -> str:
         base = os.path.abspath(directory)
+        # Auto-wrap with wildcards if no glob chars given (e.g. "config" → "*config*")
+        pattern = name if any(c in name for c in ("*", "?", "[")) else f"*{name}*"
         results = []
         for root, _dirs, files in os.walk(base):
             for f in files:
-                if fnmatch.fnmatch(f.lower(), name.lower()):
+                if fnmatch.fnmatch(f.lower(), pattern.lower()):
                     results.append(os.path.join(root, f))
         if not results:
             return f"No files found matching '{name}' in {base}"
