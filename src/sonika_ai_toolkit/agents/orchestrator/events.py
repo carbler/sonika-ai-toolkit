@@ -16,6 +16,12 @@ class StatusEvent(TypedDict):
     wait_s: float
 
 
+class PartialResponseEvent(TypedDict):
+    """Intermediate text emitted by the agent while it continues working."""
+    text: str
+    turn: int
+
+
 class ToolRecord(TypedDict):
     """A record of a single tool execution captured by the tools node."""
     tool_name: str
@@ -28,6 +34,7 @@ class AgentUpdate(TypedDict, total=False):
     """Payload emitted by the ``agent`` node in the ``updates`` stream."""
     messages: List[Any]          # List[BaseMessage]
     final_report: Optional[str]
+    partial_response: Optional[str]  # intermediate text when agent continues working
     thinking: str
     status_events: List[StatusEvent]  # rate-limit retries, warnings, …
 

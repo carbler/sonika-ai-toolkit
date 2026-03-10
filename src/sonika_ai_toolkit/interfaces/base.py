@@ -47,3 +47,11 @@ class BaseInterface(ABC):
         Intentionally NOT abstract — backward compatible with existing subclasses.
         """
         pass
+
+    def on_partial_response(self, text: str) -> None:
+        """
+        Called when the agent emits intermediate text while continuing to work.
+        Default: no-op.  Override to show progress to the user.
+        Intentionally NOT abstract — backward compatible with existing subclasses.
+        """
+        pass

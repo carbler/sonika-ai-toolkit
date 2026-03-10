@@ -37,6 +37,20 @@ def _is_rate_limit(exc: Exception) -> bool:
     return "429" in str(exc) or "quota" in str(exc).lower() or "rate" in str(exc).lower()
 
 
+def _extract_text_content(response) -> str:
+    """Extract clean text content from an AIMessage, filtering out thinking blocks."""
+    text = response.content
+    if isinstance(text, list):
+        parts = []
+        for p in text:
+            if isinstance(p, str):
+                parts.append(p)
+            elif isinstance(p, dict) and p.get("type") != "thinking":
+                parts.append(str(p.get("text", "") or p.get("content", "")))
+        text = "".join(parts)
+    return str(text).strip()
+
+
 class OrchestratorBot(IOrchestratorBot):
     """
     Fast, Singleton, ReAct-based Orchestrator with native LangGraph interrupts.
@@ -180,22 +194,20 @@ class OrchestratorBot(IOrchestratorBot):
             if new_thinking:
                 accumulated_thinking = (accumulated_thinking + "\n" + new_thinking).strip()
 
-            # Record final report if no tools are called
-            final_report = state.get("final_report", "")
+            # Extract clean text content
+            text_content = _extract_text_content(response)
+
+            result: Dict[str, Any] = {
+                "messages": [response],
+                "thinking": accumulated_thinking,
+                "status_events": retry_events,
+            }
+
             if not response.tool_calls:
-                # Clean content
-                text = response.content
-                if isinstance(text, list):
-                    parts = []
-                    for p in text:
-                        if isinstance(p, str):
-                            parts.append(p)
-                        elif isinstance(p, dict) and p.get("type") != "thinking":
-                            parts.append(str(p.get("text", "") or p.get("content", "")))
-                    text = "".join(parts)
-                text = str(text).strip()
-                if text:
-                    final_report = text
+                # Final turn — set final_report
+                final_report = state.get("final_report", "")
+                if text_content:
+                    final_report = text_content
                 else:
                     # Fallback: model generated empty content after tool execution
                     # Use output from most recent ToolMessage(s) in history
@@ -208,18 +220,12 @@ class OrchestratorBot(IOrchestratorBot):
                             break  # Stop at AIMessage that originated this batch
                     if tool_outputs:
                         final_report = "\n\n".join(tool_outputs)
-
-            result: Dict[str, Any] = {
-                "messages": [response],
-                "thinking": accumulated_thinking,
-                "status_events": retry_events,
-            }
-            # Only write final_report when this is truly the final step.
-            # If the agent is still calling tools, omitting the key leaves the
-            # previous turn's value untouched in state — but crucially it is NOT
-            # emitted to the stream, so the UI never captures a stale response.
-            if not response.tool_calls:
                 result["final_report"] = final_report
+            elif text_content:
+                # Intermediate turn with text + tool_calls → partial response
+                result["partial_response"] = text_content
+                result["partial_responses"] = [text_content]
+
             return result
 
         async def tools_node(state: OrchestratorState) -> Dict[str, Any]:
@@ -349,6 +355,7 @@ class OrchestratorBot(IOrchestratorBot):
                 "session_log": [],
                 "tools_executed": [],
                 "status_events": [],
+                "partial_responses": [],
             }
             # Add backward compatibility for old scripts using callbacks
             if self.on_message:
@@ -383,6 +390,7 @@ class OrchestratorBot(IOrchestratorBot):
             "session_log": [],
             "tools_executed": [],
             "status_events": [],
+            "partial_responses": [],
         }
         
         # In `arun` (used by older tests/chat.py), we just want the final result

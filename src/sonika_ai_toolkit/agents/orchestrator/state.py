@@ -21,6 +21,7 @@ class OrchestratorState(TypedDict):
     
     # ── Outputs ────────────────────────────────────────────────────────────
     final_report: Optional[str]
+    partial_responses: Annotated[List[str], operator.add]
     session_log: Annotated[List[str], operator.add]
     tools_executed: Annotated[List[Dict[str, Any]], operator.add]
     status_events: Annotated[List[Dict[str, Any]], operator.add]

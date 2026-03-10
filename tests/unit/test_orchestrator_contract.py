@@ -15,6 +15,7 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     ToolsUpdate,
     StatusEvent,
     ToolRecord,
+    PartialResponseEvent,
 )
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
 from sonika_ai_toolkit.interfaces.base import BaseInterface
@@ -128,6 +129,18 @@ class TestStreamEventTypes:
         }
         assert rec["status"] in ("success", "error", "skipped")
 
+    def test_partial_response_event_required_keys(self):
+        ev: PartialResponseEvent = {"text": "Task 1 done", "turn": 1}
+        assert ev["text"] == "Task 1 done"
+        assert isinstance(ev["turn"], int)
+
+    def test_agent_update_accepts_partial_response(self):
+        update: AgentUpdate = {
+            "partial_response": "Working on task 2...",
+            "status_events": [],
+        }
+        assert update["partial_response"] == "Working on task 2..."
+
     def test_agent_update_accepts_status_events(self):
         update: AgentUpdate = {
             "final_report": "Done",
@@ -171,6 +184,7 @@ class TestBaseInterfaceContract:
     @pytest.mark.parametrize("method_name", [
         "on_thought", "on_tool_start", "on_tool_end",
         "on_error", "on_interrupt", "on_result", "on_retry",
+        "on_partial_response",
     ])
     def test_required_methods_exist(self, method_name):
         assert hasattr(BaseInterface, method_name)
@@ -188,6 +202,20 @@ class TestBaseInterfaceContract:
 
         impl = MinimalImpl()
         impl.on_retry(1, 2.0)  # Must not raise
+
+    def test_on_partial_response_has_default_implementation(self):
+        """on_partial_response must NOT be abstract — backward compatible."""
+
+        class MinimalImpl(BaseInterface):
+            def on_thought(self, chunk): pass
+            def on_tool_start(self, tool_name, params): pass
+            def on_tool_end(self, tool_name, result): pass
+            def on_error(self, tool_name, error): pass
+            def on_interrupt(self, data): return True
+            def on_result(self, result): pass
+
+        impl = MinimalImpl()
+        impl.on_partial_response("progress update")  # Must not raise
 
 
 # ── Public API smoke test ─────────────────────────────────────────────────────
@@ -207,6 +235,10 @@ class TestPublicAPI:
     def test_event_types_importable_from_top_level(self):
         from sonika_ai_toolkit import AgentUpdate, StatusEvent, ToolRecord
         assert AgentUpdate is not None
+
+    def test_partial_response_event_importable(self):
+        from sonika_ai_toolkit import PartialResponseEvent
+        assert PartialResponseEvent is not None
 
     def test_core_tools_importable_from_top_level(self):
         from sonika_ai_toolkit import FindFileTool, RunBashTool

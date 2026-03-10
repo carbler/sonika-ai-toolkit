@@ -34,7 +34,8 @@ AWS_REGION=us-east-1
 - **Tasker Agent**: Planner-executor agent (`TaskerBot`) for complex multi-step tasks.
 - **Orchestrator Agent**: Autonomous goal-driven agent (`OrchestratorBot`) with async streaming, persistent memory, LangGraph interrupts for human-in-the-loop, and rate-limit retry with progress events.
 - **Formal Interface Contracts**: `IConversationBot` and `IOrchestratorBot` ABCs ensure stable APIs across agent implementations.
-- **Typed Stream Events**: `StatusEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
+- **Typed Stream Events**: `StatusEvent`, `PartialResponseEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
+- **Partial/Intermediate Responses**: The orchestrator emits structured `partial_responses` when the agent produces text while continuing to call tools, enabling real-time progress feedback.
 - **Structured Classification**: Text classification with strongly typed outputs.
 - **Document Processing**: Utilities for processing PDFs, DOCX, and other formats with intelligent chunking.
 - **Custom Tools**: Easy integration of custom tools via Pydantic and LangChain.
@@ -110,6 +111,9 @@ async def main():
                     for ev in update.get("status_events", []):
                         if ev["type"] == "retrying":
                             print(f"↻ Rate limit — retry {ev['attempt']}, wait {ev['wait_s']}s")
+                    # Show intermediate progress
+                    for partial in update.get("partial_responses", []):
+                        print("Progress:", partial)
                     if update.get("final_report"):
                         print("Result:", update["final_report"])
 
@@ -157,10 +161,11 @@ from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
 
 ```python
 from sonika_ai_toolkit.agents.orchestrator.events import (
-    StatusEvent,   # rate-limit retry event
-    AgentUpdate,   # "agent" node payload in "updates" stream
-    ToolsUpdate,   # "tools" node payload in "updates" stream
-    ToolRecord,    # individual tool execution record
+    StatusEvent,           # rate-limit retry event
+    PartialResponseEvent,  # intermediate text while agent continues working
+    AgentUpdate,           # "agent" node payload in "updates" stream
+    ToolsUpdate,           # "tools" node payload in "updates" stream
+    ToolRecord,            # individual tool execution record
 )
 ```
 
@@ -179,7 +184,7 @@ from sonika_ai_toolkit.utilities.models import (
 
 - **`ILanguageModel`**: Unified interface for LLM providers (`predict`, `invoke`, `stream_response`).
 - **`BotResponse`**: Unified response type — dict-compatible + typed properties.
-- **`BaseInterface`**: ABC for UI layers — implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`, `on_retry`.
+- **`BaseInterface`**: ABC for UI layers — implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`. Optional: `on_retry`, `on_partial_response`.
 - **`DocumentProcessor`**: Text extraction and chunking for PDF, DOCX, XLSX, PPTX.
 
 ### Top-Level Imports
@@ -187,7 +192,7 @@ from sonika_ai_toolkit.utilities.models import (
 ```python
 from sonika_ai_toolkit import (
     OrchestratorBot, IOrchestratorBot,
-    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent,
+    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     BotResponse, ILanguageModel,
     GeminiLanguageModel, OpenAILanguageModel,
     BedrockLanguageModel, DeepSeekLanguageModel,

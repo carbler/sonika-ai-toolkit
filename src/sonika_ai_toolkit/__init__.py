@@ -13,6 +13,7 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     ToolsUpdate,
     ToolRecord,
     StatusEvent,
+    PartialResponseEvent,
 )
 
 # Response type
@@ -62,6 +63,7 @@ __all__ = [
     "ToolsUpdate",
     "ToolRecord",
     "StatusEvent",
+    "PartialResponseEvent",
     # Types
     "BotResponse",
     "ILanguageModel",
