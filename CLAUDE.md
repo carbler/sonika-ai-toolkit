@@ -37,7 +37,48 @@ python tests/ultimate/banking_operations/stress_test_runner.py
 
 # Lint
 ruff check .
+
+# Documentation — local preview
+pip install mkdocs-material && mkdocs serve
+
+# Documentation — manual deploy (normally auto via GitHub Actions)
+mkdocs gh-deploy --force
 ```
+
+## Documentation (MkDocs + GitHub Pages)
+
+The project uses **MkDocs Material** for documentation, hosted on GitHub Pages.
+
+- **Live site**: https://carbler.github.io/sonika-ai-toolkit/
+- **Config**: `mkdocs.yml` (site metadata, theme, nav, markdown extensions)
+- **Source**: `docs/` directory
+
+### Documentation Structure
+
+```
+docs/
+├── index.md               # Overview + quick example + navigation links
+├── getting-started.md     # Installation, API keys, first agent, first classifier
+├── agents.md              # ReactBot, TaskerBot, OrchestratorBot (modes, streaming, BotResponse)
+├── classifiers.md         # TextClassifier, Intent, Sentiment, Safety, Image — with examples
+├── models.md              # OpenAI, Gemini, DeepSeek, Bedrock — config + gotchas
+├── tools.md               # 18 built-in tools + custom tool creation with Pydantic
+└── interfaces.md          # BaseInterface, BotResponse, stream event TypedDicts
+```
+
+### Auto-Deploy Workflow
+
+`.github/workflows/docs.yml` runs on every push to `main`:
+1. Checkout → Setup Python 3.12 → Install mkdocs-material
+2. `mkdocs gh-deploy --force` → publishes to `gh-pages` branch
+
+**GitHub Pages config**: Settings → Pages → Source: Deploy from `gh-pages` branch, `/ (root)`.
+
+### When to Update Docs
+
+- Adding a new agent, classifier, tool, or event type → update the relevant `docs/*.md` page
+- Changing public API (`__init__.py`) → update `docs/getting-started.md` and relevant page
+- Adding a new top-level component → add nav entry in `mkdocs.yml`
 
 ## Testing
 
@@ -46,14 +87,16 @@ ruff check .
 ```
 tests/
 ├── conftest.py          # Shared mocks — no API keys needed
-├── unit/                # ~165 tests — isolated, ~3s
+├── unit/                # ~310 tests — isolated, ~5s
 │   ├── test_models.py                  # LLM wrapper tests (all providers)
+│   ├── test_classifiers.py            # Classifier tests (28 tests)
 │   └── test_orchestrator_contract.py  # Interface contract tests (37 tests)
 ├── integration/         # Tests with mocked component interaction
 ├── e2e/                 # Real API calls, skip if key missing
 │   ├── conftest.py      # ← MODEL CONFIGURATION (change model name here)
 │   ├── test_reactbot.py
-│   └── test_orchestratorbot.py
+│   ├── test_orchestratorbot.py
+│   └── test_classifiers.py           # Classifier e2e tests (10 tests)
 └── ultimate/            # Stress test suite (standalone runner, not pytest)
     └── banking_operations/
         ├── batch_runner.py      # Run: python batch_runner.py
@@ -82,6 +125,7 @@ pytest -m slow        # Slower tests
 - `result.content` is a non-empty string
 - Both `EmailTool` and `SaveContacto` appear in `result.tools_executed`
 - Stream events yield at least one `"messages"` or `"updates"` event (OrchestratorBot)
+- Classifier e2e: result has expected keys, token counts > 0
 
 ## Architecture
 
@@ -209,17 +253,28 @@ async for stream_mode, payload in bot.astream_events(goal):
                         print(f"Rate limit — retry {ev['attempt']}, wait {ev['wait_s']}s")
 ```
 
+### Classifiers (`src/sonika_ai_toolkit/classifiers/`)
+
+Five classifiers for structured text and image classification. All return `ClassificationResponse` with `result` (dict), `input_tokens`, and `output_tokens`. All support sync (`classify`) and async (`aclassify`).
+
+- **`TextClassifier`** (`text.py`): Base classifier — user provides a Pydantic `validation_class` defining the output schema. Uses `with_structured_output(include_raw=True)` for token extraction.
+- **`IntentClassifier`** (`intent.py`): Classifies text into predefined intents. Accepts `intents` list and optional `descriptions` dict. Uses `create_model()` to build a dynamic schema constraining the `intent` field. Returns `{intent, confidence, entities}`.
+- **`SentimentClassifier`** (`sentiment.py`): Zero-config sentiment analysis. Fixed `SentimentResult` schema. Returns `{sentiment, confidence, reasoning}`.
+- **`SafetyClassifier`** (`safety.py`): Content safety moderation. Default categories: `hate_speech`, `violence`, `sexual_content`, `self_harm`, `pii`, `harassment`, `illegal_activity`. Accepts `custom_categories`. Returns `{is_safe, categories, severity, explanation}`.
+- **`ImageClassifier`** (`image.py`): Multimodal image classification. Accepts image URLs or local file paths (auto-converts to base64 data URL). Requires vision-capable LLM (OpenAI gpt-4o/gpt-4o-mini or Gemini).
+
+**Token extraction** (`_extract_tokens` in `text.py`): Handles both OpenAI-style (`response_metadata.token_usage.prompt_tokens`) and Gemini-style (`usage_metadata.input_tokens`).
+
 ### Tools (`src/sonika_ai_toolkit/tools/`)
 
 - `registry.py`: `ToolRegistry` — register/get/list; `get_tool_descriptions()` includes param names for LLM prompts
-- `core/`: `RunBashTool`, `ReadFileTool`, `WriteFileTool`, `ListDirTool`, `DeleteFileTool`, `FindFileTool`, `CallApiTool`, `SearchWebTool` (opt-in, not auto-registered)
+- `core/`: 16 built-in tools — `RunBashTool`, `BashSafeTool`, `ReadFileTool`, `WriteFileTool`, `ListDirTool`, `DeleteFileTool`, `FindFileTool`, `RunPythonTool`, `CallApiTool`, `SearchWebTool`, `FetchWebPageTool`, `GetDateTimeTool`, `EmailSMTPTool`, `SQLiteTool`, `PostgreSQLTool`, `MySQLTool`, `RedisTool`
 - `integrations.py`: `EmailTool`, `SaveContacto` — must have `args_schema` (Pydantic) for correct LLM param generation
 
 ### Other Components
 
-- `classifiers/text.py`: `TextClassifier` — structured output classification
 - `document_processing/`: `DocumentProcessor` for PDF, DOCX, XLSX, PPTX, TXT
-- `interfaces/base.py`: `BaseInterface` — ABC for UI layers. Implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`. `on_retry(attempt, wait_s, reason)` has a default no-op — override to show retry feedback.
+- `interfaces/base.py`: `BaseInterface` — ABC for UI layers. Implement `on_thought`, `on_tool_start`, `on_tool_end`, `on_error`, `on_interrupt`, `on_result`. `on_retry(attempt, wait_s, reason)` and `on_partial_response(text)` have default no-ops — override to show feedback.
 
 ### Provider-Specific Gotchas
 
@@ -238,8 +293,10 @@ Top-level imports for the most common components:
 from sonika_ai_toolkit import (
     # Orchestrator
     OrchestratorBot, IOrchestratorBot,
+    # Agent interfaces
+    IBot, IConversationBot,
     # Stream event types
-    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent,
+    AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     # Response type
     BotResponse, ILanguageModel,
     # LLM providers
@@ -247,9 +304,15 @@ from sonika_ai_toolkit import (
     BedrockLanguageModel, DeepSeekLanguageModel,
     # UI contract
     BaseInterface,
+    # Classifiers
+    TextClassifier, ClassificationResponse,
+    IntentClassifier, SentimentClassifier,
+    SafetyClassifier, ImageClassifier,
     # Core tools
-    RunBashTool, ReadFileTool, WriteFileTool,
-    ListDirTool, DeleteFileTool, FindFileTool,
-    CallApiTool, SearchWebTool,
+    RunBashTool, BashSafeTool,
+    ReadFileTool, WriteFileTool, ListDirTool, DeleteFileTool, FindFileTool,
+    CallApiTool, SearchWebTool, FetchWebPageTool,
+    RunPythonTool, GetDateTimeTool,
+    EmailSMTPTool, SQLiteTool, PostgreSQLTool, MySQLTool, RedisTool,
 )
 ```
