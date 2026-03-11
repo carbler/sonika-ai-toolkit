@@ -2,7 +2,7 @@
 
 A robust Python library designed to build state-of-the-art conversational agents and AI tools. It leverages `LangChain` and `LangGraph` to create autonomous bots capable of complex reasoning and tool execution.
 
-**[Documentation](https://sonika-technologies.github.io/sonika-ai-toolkit/)**
+**[Documentation](https://carbler.github.io/sonika-ai-toolkit/)**
 
 ## Installation
 
