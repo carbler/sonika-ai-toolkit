@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/agents/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/classifiers/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/getting-started/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/interfaces/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/models/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://carbler.github.io/sonika-ai-toolkit/tools/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+</urlset>
