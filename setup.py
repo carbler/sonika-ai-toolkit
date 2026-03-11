@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sonika-ai-toolkit",
-    version="0.3.5",
+    version="0.3.6",
     description="Toolkit para creación de agentes de IA y procesamiento de documentos",
     author="Erley Blanco Carvajal",
     license="MIT License",
@@ -37,8 +37,7 @@ setup(
 
     extras_require={
         "dev": [
-            "sphinx>=8.1.3,<9.0.0",
-            "sphinx-rtd-theme>=3.0.1,<4.0.0",
+            "mkdocs-material>=9.0",
         ],
     },
     classifiers=[

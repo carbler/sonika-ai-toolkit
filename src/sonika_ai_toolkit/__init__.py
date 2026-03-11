@@ -30,6 +30,16 @@ from sonika_ai_toolkit.utilities.models import (
 # UI interface contract
 from sonika_ai_toolkit.interfaces.base import BaseInterface
 
+# Classifiers
+from sonika_ai_toolkit.classifiers import (
+    TextClassifier,
+    ClassificationResponse,
+    IntentClassifier,
+    SentimentClassifier,
+    SafetyClassifier,
+    ImageClassifier,
+)
+
 # Core tools
 from sonika_ai_toolkit.tools.core import (
     RunBashTool,
@@ -74,6 +84,13 @@ __all__ = [
     "DeepSeekLanguageModel",
     # UI
     "BaseInterface",
+    # Classifiers
+    "TextClassifier",
+    "ClassificationResponse",
+    "IntentClassifier",
+    "SentimentClassifier",
+    "SafetyClassifier",
+    "ImageClassifier",
     # Tools
     "RunBashTool",
     "BashSafeTool",

@@ -1,0 +1,34 @@
+site_name: Sonika AI Toolkit
+site_description: A Python library for building conversational AI agents using LangChain and LangGraph
+site_url: https://sonika-technologies.github.io/sonika-ai-toolkit/
+repo_url: https://github.com/sonika-technologies/sonika-ai-toolkit
+repo_name: sonika-ai-toolkit
+
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: indigo
+    accent: indigo
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Agents: agents.md
+  - Classifiers: classifiers.md
+  - Models: models.md
+  - Tools: tools.md
+  - Interfaces: interfaces.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: true

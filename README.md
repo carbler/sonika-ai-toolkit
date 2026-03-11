@@ -2,6 +2,8 @@
 
 A robust Python library designed to build state-of-the-art conversational agents and AI tools. It leverages `LangChain` and `LangGraph` to create autonomous bots capable of complex reasoning and tool execution.
 
+**[Documentation](https://sonika-technologies.github.io/sonika-ai-toolkit/)**
+
 ## Installation
 
 ```bash
@@ -36,7 +38,7 @@ AWS_REGION=us-east-1
 - **Formal Interface Contracts**: `IConversationBot` and `IOrchestratorBot` ABCs ensure stable APIs across agent implementations.
 - **Typed Stream Events**: `StatusEvent`, `PartialResponseEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
 - **Partial/Intermediate Responses**: The orchestrator emits structured `partial_responses` when the agent produces text while continuing to call tools, enabling real-time progress feedback.
-- **Structured Classification**: Text classification with strongly typed outputs.
+- **Classifiers**: Text, Intent, Sentiment, Safety, and Image classification with structured outputs.
 - **Document Processing**: Utilities for processing PDFs, DOCX, and other formats with intelligent chunking.
 - **Custom Tools**: Easy integration of custom tools via Pydantic and LangChain.
 
@@ -120,21 +122,75 @@ async def main():
 asyncio.run(main())
 ```
 
-### Text Classification
+### Classifiers
+
+#### Text Classification (custom schema)
 
 ```python
-import os
-from sonika_ai_toolkit.classifiers.text import TextClassifier
-from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
 from pydantic import BaseModel, Field
+from sonika_ai_toolkit import TextClassifier, OpenAILanguageModel
 
-class Classification(BaseModel):
-    intention: str = Field()
-    sentiment: str = Field(..., enum=["happy", "neutral", "sad", "excited"])
+class TicketClassification(BaseModel):
+    category: str = Field(..., description="The ticket category")
+    priority: str = Field(..., description="Priority: low, medium, high, critical")
 
-model = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"))
-classifier = TextClassifier(llm=model, validation_class=Classification)
-result = classifier.classify("I am very happy today!")
+llm = OpenAILanguageModel("sk-...", model_name="gpt-4o-mini")
+classifier = TextClassifier(llm=llm, validation_class=TicketClassification)
+result = classifier.classify("My server is down!")
+print(result.result)  # {'category': 'infrastructure', 'priority': 'critical'}
+```
+
+#### Intent Classification
+
+```python
+from sonika_ai_toolkit import IntentClassifier, OpenAILanguageModel
+
+llm = OpenAILanguageModel("sk-...", model_name="gpt-4o-mini")
+classifier = IntentClassifier(
+    llm=llm,
+    intents=["book_flight", "cancel_booking", "check_status"],
+    descriptions={"book_flight": "User wants to book a new flight"},
+)
+result = classifier.classify("I need to fly to London next Friday")
+print(result.result)  # {'intent': 'book_flight', 'confidence': 0.95, 'entities': {...}}
+```
+
+#### Sentiment Analysis
+
+```python
+from sonika_ai_toolkit import SentimentClassifier, OpenAILanguageModel
+
+classifier = SentimentClassifier(llm=OpenAILanguageModel("sk-..."))
+result = classifier.classify("This product is amazing!")
+print(result.result)  # {'sentiment': 'positive', 'confidence': 0.92, 'reasoning': '...'}
+```
+
+#### Safety Classification
+
+```python
+from sonika_ai_toolkit import SafetyClassifier, OpenAILanguageModel
+
+classifier = SafetyClassifier(llm=OpenAILanguageModel("sk-..."))
+result = classifier.classify("I love sunny days at the park.")
+print(result.result)  # {'is_safe': True, 'categories': [], 'severity': 'none', ...}
+
+# With custom categories
+classifier = SafetyClassifier(llm=llm, custom_categories=["misinformation", "spam"])
+```
+
+#### Image Classification
+
+```python
+from pydantic import BaseModel, Field
+from sonika_ai_toolkit import ImageClassifier, OpenAILanguageModel
+
+class SceneAnalysis(BaseModel):
+    description: str = Field(..., description="Brief description")
+    objects: list[str] = Field(..., description="Main objects detected")
+
+llm = OpenAILanguageModel("sk-...", model_name="gpt-4o-mini")
+classifier = ImageClassifier(llm=llm, validation_class=SceneAnalysis)
+result = classifier.classify("https://example.com/photo.jpg")
 print(result.result)
 ```
 
@@ -149,6 +205,16 @@ print(result.result)
 | **OrchestratorBot** | `agents.orchestrator.graph.OrchestratorBot` | `IOrchestratorBot` | Autonomous goal-driven agent |
 
 All agents return `BotResponse` — a `dict` subclass with typed property accessors (`.content`, `.thinking`, `.tools_executed`, `.token_usage`).
+
+### Classifiers
+
+| Classifier | Description | Schema |
+|------------|-------------|--------|
+| **TextClassifier** | Custom schema classification | User-defined Pydantic model |
+| **IntentClassifier** | Intent detection + entities | `intent`, `confidence`, `entities` |
+| **SentimentClassifier** | Sentiment analysis | `sentiment`, `confidence`, `reasoning` |
+| **SafetyClassifier** | Content safety moderation | `is_safe`, `categories`, `severity`, `explanation` |
+| **ImageClassifier** | Multimodal image classification | User-defined Pydantic model |
 
 ### Interfaces
 
@@ -191,15 +257,28 @@ from sonika_ai_toolkit.utilities.models import (
 
 ```python
 from sonika_ai_toolkit import (
+    # Agents
     OrchestratorBot, IOrchestratorBot,
+    IBot, IConversationBot,
+    # Events
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
+    # Types
     BotResponse, ILanguageModel,
+    # Models
     GeminiLanguageModel, OpenAILanguageModel,
     BedrockLanguageModel, DeepSeekLanguageModel,
+    # UI
     BaseInterface,
-    RunBashTool, ReadFileTool, WriteFileTool,
-    ListDirTool, DeleteFileTool, FindFileTool,
-    CallApiTool, SearchWebTool,
+    # Classifiers
+    TextClassifier, ClassificationResponse,
+    IntentClassifier, SentimentClassifier,
+    SafetyClassifier, ImageClassifier,
+    # Tools
+    RunBashTool, BashSafeTool,
+    ReadFileTool, WriteFileTool, ListDirTool, DeleteFileTool, FindFileTool,
+    CallApiTool, SearchWebTool, FetchWebPageTool,
+    RunPythonTool, GetDateTimeTool,
+    EmailSMTPTool, SQLiteTool, PostgreSQLTool, MySQLTool, RedisTool,
 )
 ```
 
@@ -217,12 +296,18 @@ src/sonika_ai_toolkit/
 │       ├── events.py        # Stream event TypedDicts
 │       ├── state.py         # OrchestratorState (LangGraph)
 │       └── memory.py        # MemoryManager (MEMORY.md)
-├── classifiers/             # Text classification tools
+├── classifiers/
+│   ├── __init__.py          # Public exports
+│   ├── text.py              # TextClassifier (base, custom schema)
+│   ├── intent.py            # IntentClassifier (predefined intents)
+│   ├── sentiment.py         # SentimentClassifier (zero-config)
+│   ├── safety.py            # SafetyClassifier (content moderation)
+│   └── image.py             # ImageClassifier (multimodal, vision LLMs)
 ├── document_processing/     # PDF and document tools
 ├── interfaces/
 │   └── base.py              # BaseInterface ABC for UI layers
 ├── tools/
-│   ├── core/                # RunBashTool, ReadFileTool, etc.
+│   ├── core/                # 16 built-in tools
 │   ├── integrations.py      # EmailTool, SaveContacto
 │   └── registry.py          # ToolRegistry
 └── utilities/
