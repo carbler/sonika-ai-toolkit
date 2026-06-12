@@ -16,6 +16,7 @@ setup(
         "langchain-community>=0.3.26",
         "langchain-core>=0.3.66",
         "langchain-openai>=0.3.24",
+        "langchain-anthropic>=0.3.0,<0.4",
         "langgraph>=0.4.8",
         "langgraph-checkpoint>=2.1.0",
         "langgraph-sdk>=0.1.70",

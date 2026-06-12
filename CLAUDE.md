@@ -199,7 +199,7 @@ Import these types in consumers instead of hardcoding dict keys.
 ### Core Abstractions (`src/sonika_ai_toolkit/utilities/`)
 
 - `types.py`: `BotResponse` (unified response), `ILanguageModel`, `Message`, `ResponseModel`, `IEmbeddings`, `FileProcessorInterface`
-- `models.py`: `OpenAILanguageModel`, `GeminiLanguageModel`, `BedrockLanguageModel`, `DeepSeekLanguageModel`. All expose `predict()`, `invoke()`, and `stream_response()`. All provider imports (`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatBedrock`) are at module level — required for correct `unittest.mock.patch` behavior in tests.
+- `models.py`: `OpenAILanguageModel`, `GeminiLanguageModel`, `BedrockLanguageModel`, `DeepSeekLanguageModel`, `AnthropicLanguageModel`. All expose `predict()`, `invoke()`, and `stream_response()`. All provider imports (`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatBedrock`, `ChatAnthropic`) are at module level — required for correct `unittest.mock.patch` behavior in tests.
 
 ### Agents (`src/sonika_ai_toolkit/agents/`)
 
@@ -283,7 +283,8 @@ Five classifiers for structured text and image classification. All return `Class
 - **DeepSeek reasoner** (`deepseek-reasoner`, or any model with `r1` in the name): Uses `_DeepSeekReasonerChatModel` (module-level subclass of `ChatOpenAI`). `reasoning_content` is injected into `additional_kwargs` via `_create_chat_result` override.
 - **LangGraph**: Requires a checkpointer (`MemorySaver`) for state persistence. `status_events` uses `operator.add` reducer in `OrchestratorState`.
 - **Bedrock**: `BedrockLanguageModel.__init__` sets `AWS_BEARER_TOKEN_BEDROCK` env var automatically.
-- **Mock patching**: All provider imports are module-level in `models.py` — `patch("sonika_ai_toolkit.utilities.models.ChatOpenAI")` works correctly.
+- **Anthropic** (`AnthropicLanguageModel`, `ChatAnthropic` from `langchain-anthropic`): Default model `claude-haiku-4-5`. Anthropic **requires** `max_tokens` (default 4096). Pass `thinking_budget=N` to enable extended thinking — this forces `temperature=1` (with a warning) and bumps `max_tokens` above the budget. Like Gemini, thinking responses return `content` as a list of blocks; `invoke()`/`stream_response()` strip `type == "thinking"` blocks.
+- **Mock patching**: All provider imports are module-level in `models.py` — `patch("sonika_ai_toolkit.utilities.models.ChatOpenAI")` (and `ChatAnthropic`) works correctly.
 
 ### Public API (`src/sonika_ai_toolkit/__init__.py`)
 
@@ -302,6 +303,7 @@ from sonika_ai_toolkit import (
     # LLM providers
     GeminiLanguageModel, OpenAILanguageModel,
     BedrockLanguageModel, DeepSeekLanguageModel,
+    AnthropicLanguageModel,
     # UI contract
     BaseInterface,
     # Classifiers

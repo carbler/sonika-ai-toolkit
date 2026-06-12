@@ -25,6 +25,7 @@ from sonika_ai_toolkit.utilities.models import (
     OpenAILanguageModel,
     BedrockLanguageModel,
     DeepSeekLanguageModel,
+    AnthropicLanguageModel,
 )
 
 # UI interface contract
@@ -82,6 +83,7 @@ __all__ = [
     "OpenAILanguageModel",
     "BedrockLanguageModel",
     "DeepSeekLanguageModel",
+    "AnthropicLanguageModel",
     # UI
     "BaseInterface",
     # Classifiers

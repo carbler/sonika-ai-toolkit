@@ -1,6 +1,6 @@
 # Models
 
-Sonika AI Toolkit supports four LLM providers. All implement the `ILanguageModel` interface with `predict()`, `invoke()`, and `stream_response()` methods.
+Sonika AI Toolkit supports five LLM providers. All implement the `ILanguageModel` interface with `predict()`, `invoke()`, and `stream_response()` methods.
 
 ## OpenAI
 
@@ -47,6 +47,24 @@ llm = DeepSeekLanguageModel(
 !!! note "DeepSeek Reasoner"
     `deepseek-reasoner` (and models with `r1` in the name) uses a custom `_DeepSeekReasonerChatModel` that captures `reasoning_content`. It does **not** support tool calling — a `ValueError` is raised if tools are provided.
 
+## Anthropic (Claude)
+
+```python
+from sonika_ai_toolkit import AnthropicLanguageModel
+
+llm = AnthropicLanguageModel(
+    api_key="sk-ant-...",
+    model_name="claude-haiku-4-5",  # default
+    temperature=0.7,
+    max_tokens=4096,                # Anthropic requires max_tokens
+)
+```
+
+**Supported models:** `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-8`, etc.
+
+!!! note "Extended thinking"
+    Pass `thinking_budget=N` to enable extended thinking. This forces `temperature=1.0` (with a warning) and raises `max_tokens` above the budget. As with Gemini, thinking responses return `content` as a list of blocks; the toolkit strips the `thinking` blocks automatically.
+
 ## Amazon Bedrock
 
 ```python
@@ -91,6 +109,7 @@ from sonika_ai_toolkit import (
     GeminiLanguageModel,
     DeepSeekLanguageModel,
     BedrockLanguageModel,
+    AnthropicLanguageModel,
     ILanguageModel,
 )
 ```

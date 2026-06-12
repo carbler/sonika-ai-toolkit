@@ -82,6 +82,14 @@ def test_reactbot_deepseek(deepseek_model):
 
 
 @pytest.mark.e2e
+def test_reactbot_anthropic(anthropic_model):
+    """ReactBot with Anthropic (Claude) executes both tools and returns a response."""
+    bot = _build_bot(anthropic_model)
+    result = bot.get_response(GOAL, HISTORY, [])
+    _assert_result(result)
+
+
+@pytest.mark.e2e
 def test_reactbot_thinking_callback(openai_model):
     """on_thinking callback is invoked (even for non-reasoning models, uses <think> fallback)."""
     thinking_chunks: list[str] = []

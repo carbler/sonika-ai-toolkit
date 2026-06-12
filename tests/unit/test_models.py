@@ -15,6 +15,7 @@ from sonika_ai_toolkit.utilities.models import (
     DeepSeekLanguageModel,
     GeminiLanguageModel,
     BedrockLanguageModel,
+    AnthropicLanguageModel,
     _DeepSeekReasonerChatModel,
 )
 
@@ -31,6 +32,9 @@ def _patch_gemini():
 
 def _patch_bedrock():
     return patch("sonika_ai_toolkit.utilities.models.ChatBedrock", autospec=True)
+
+def _patch_anthropic():
+    return patch("sonika_ai_toolkit.utilities.models.ChatAnthropic", autospec=True)
 
 
 # ---------------------------------------------------------------------------
@@ -297,3 +301,87 @@ class TestDeepSeekReasonerChatModel:
             result = model._create_chat_result(response_dict)
 
         assert result.generations[0].message.additional_kwargs.get("reasoning_content") is None
+
+
+# ---------------------------------------------------------------------------
+# AnthropicLanguageModel
+# ---------------------------------------------------------------------------
+
+class TestAnthropicLanguageModel:
+    def test_init_default_model_name(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key")
+            _, kwargs = MockAnthropic.call_args
+            assert kwargs.get("model") == "claude-haiku-4-5"
+
+    def test_init_custom_model_name(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", model_name="claude-opus-4-8")
+            _, kwargs = MockAnthropic.call_args
+            assert kwargs.get("model") == "claude-opus-4-8"
+
+    def test_init_passes_temperature(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", temperature=0.3)
+            _, kwargs = MockAnthropic.call_args
+            assert kwargs.get("temperature") == 0.3
+
+    def test_init_passes_max_tokens(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", max_tokens=2048)
+            _, kwargs = MockAnthropic.call_args
+            assert kwargs.get("max_tokens") == 2048
+
+    def test_init_supports_thinking_false_by_default(self):
+        with _patch_anthropic():
+            model = AnthropicLanguageModel(api_key="key")
+            assert model.supports_thinking is False
+            assert "thinking" not in {}  # sanity
+
+    def test_thinking_budget_enables_thinking_and_forces_temperature(self):
+        with _patch_anthropic() as MockAnthropic:
+            model = AnthropicLanguageModel(api_key="key", temperature=0.7, thinking_budget=2000)
+            _, kwargs = MockAnthropic.call_args
+            assert model.supports_thinking is True
+            assert kwargs.get("temperature") == 1.0
+            assert kwargs.get("thinking") == {"type": "enabled", "budget_tokens": 2000}
+            # max_tokens must exceed the thinking budget
+            assert kwargs.get("max_tokens") > 2000
+
+    def test_invoke_delegates_to_model(self):
+        with _patch_anthropic():
+            lm = AnthropicLanguageModel(api_key="key")
+            lm.model = MagicMock()
+            lm.model.invoke.return_value = AIMessage(content="invoked")
+            result = lm.invoke("hello")
+            assert result == "invoked"
+
+    def test_invoke_filters_thinking_blocks(self):
+        with _patch_anthropic():
+            lm = AnthropicLanguageModel(api_key="key")
+            lm.model = MagicMock()
+            lm.model.invoke.return_value = AIMessage(content=[
+                {"type": "thinking", "thinking": "secret reasoning"},
+                {"type": "text", "text": "final answer"},
+            ])
+            result = lm.invoke("hello")
+            assert "secret reasoning" not in result
+            assert "final answer" in result
+
+    def test_predict_delegates_to_invoke(self):
+        with _patch_anthropic():
+            lm = AnthropicLanguageModel(api_key="key")
+            lm.model = MagicMock()
+            lm.model.invoke.return_value = AIMessage(content="predicted")
+            assert lm.predict("hello") == "predicted"
+
+    def test_stream_response_yields_chunks(self):
+        with _patch_anthropic():
+            lm = AnthropicLanguageModel(api_key="key")
+            lm.model = MagicMock()
+            lm.model.stream.return_value = iter([
+                MagicMock(content="chunk1"),
+                MagicMock(content="chunk2"),
+            ])
+            chunks = list(lm.stream_response("hello"))
+            assert chunks == ["chunk1", "chunk2"]

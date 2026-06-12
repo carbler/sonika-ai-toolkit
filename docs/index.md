@@ -4,7 +4,7 @@ A robust Python library for building conversational AI agents using **LangChain*
 
 ## Features
 
-- **Multi-Model Support** — OpenAI, DeepSeek, Google Gemini, Amazon Bedrock
+- **Multi-Model Support** — OpenAI, Anthropic (Claude), DeepSeek, Google Gemini, Amazon Bedrock
 - **Three Agent Architectures** — ReactBot, TaskerBot, OrchestratorBot
 - **Classifiers** — Text, Intent, Sentiment, Safety, and Image classification
 - **18 Built-in Tools** — Bash, file I/O, API calls, web search, databases, and more

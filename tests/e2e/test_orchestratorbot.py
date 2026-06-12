@@ -50,8 +50,8 @@ def _assert_result(result) -> None:
     assert "EmailTool" in executed_tools, (
         f"EmailTool should have been called; executed: {executed_tools}"
     )
-    assert "SaveContacto" in executed_tools, (
-        f"SaveContacto should have been called; executed: {executed_tools}"
+    assert "SaveContact" in executed_tools, (
+        f"SaveContact should have been called; executed: {executed_tools}"
     )
 
 
@@ -77,6 +77,14 @@ def test_orchestratorbot_gemini(gemini_model):
 def test_orchestratorbot_deepseek(deepseek_model):
     """OrchestratorBot with DeepSeek Chat executes both tools and returns a result."""
     bot = _build_bot(deepseek_model, "/tmp/e2e_orch_deepseek")
+    result = bot.run(GOAL)
+    _assert_result(result)
+
+
+@pytest.mark.e2e
+def test_orchestratorbot_anthropic(anthropic_model):
+    """OrchestratorBot with Anthropic (Claude) executes both tools and returns a result."""
+    bot = _build_bot(anthropic_model, "/tmp/e2e_orch_anthropic")
     result = bot.run(GOAL)
     _assert_result(result)
 
