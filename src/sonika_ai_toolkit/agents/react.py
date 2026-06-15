@@ -19,6 +19,21 @@ from sonika_ai_toolkit.agents.base import IConversationBot
 
 # ============= MODULE-LEVEL HELPERS =============
 
+def _has_image_content(messages) -> bool:
+    """True if any message carries multimodal image content (a vision turn).
+
+    Vision turns send the user message as a list of parts, e.g.
+    ``[{"type": "text", ...}, {"type": "image_url", "image_url": {...}}]``.
+    """
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") in ("image_url", "image"):
+                    return True
+    return False
+
+
 def _get_text_content(content) -> str:
     """Extract only the text (non-thinking) parts from a message content.
 
@@ -611,6 +626,19 @@ class ReactBot(IConversationBot):
                             "[SYSTEM REMINDER]\n"
                             "Tool results are shown above. DO NOT call any tools again. "
                             "Synthesize the results and provide your complete final answer to the user now."
+                        )
+                    )
+                )
+            elif _has_image_content(state.get("messages", [])):
+                # Vision turn: let the model read the image and answer directly.
+                # Forcing tool usage here makes some models refuse ("I can't help")
+                # when no tool applies to an image question.
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "[SYSTEM REMINDER]\n"
+                            "The user shared an image. Look at it and answer directly about what it shows. "
+                            "Use a tool only if one is clearly required; never refuse just because no tool applies."
                         )
                     )
                 )

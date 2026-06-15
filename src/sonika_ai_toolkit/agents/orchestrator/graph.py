@@ -23,7 +23,24 @@ from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
 from sonika_ai_toolkit.agents.orchestrator.events import StatusEvent
 from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
-from sonika_ai_toolkit.agents.react import extract_thinking
+from sonika_ai_toolkit.agents.react import extract_thinking, _has_image_content
+
+
+def _build_user_message(goal: str, images: Optional[List[str]] = None) -> HumanMessage:
+    """Build the user turn — plain text, or multimodal (text + images) for vision.
+
+    ``images`` is a list of image URLs / data-URLs. When present the message
+    content becomes the list format the chat models expect for vision so the
+    orchestrator's agent can actually "see" the image.
+    """
+    if not images:
+        return HumanMessage(content=goal)
+    content: List[Dict[str, Any]] = []
+    if goal:
+        content.append({"type": "text", "text": goal})
+    for url in images:
+        content.append({"type": "image_url", "image_url": {"url": url}})
+    return HumanMessage(content=content)
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -66,6 +83,7 @@ class OrchestratorBot(IOrchestratorBot):
         risk_threshold: int = 1, # Kept for signature compatibility
         max_retries: int = 3, # Kept for signature compatibility
         code_model: Optional[ILanguageModel] = None, # Kept for signature compatibility
+        vision_model: Optional[ILanguageModel] = None, # Model used for image (vision) turns
         on_human_approval: Optional[Callable[[Dict], bool]] = None, # Legacy
         on_step_start: Optional[Callable[[Dict], None]] = None, # Legacy
         on_step_end: Optional[Callable[[Dict, str], None]] = None, # Legacy
@@ -77,6 +95,10 @@ class OrchestratorBot(IOrchestratorBot):
         checkpointer: Any = None,
     ):
         self.model = strong_model
+        # Model used for image (vision) turns. Falls back to the strong model so
+        # existing callers keep working; pass a vision-capable model here to let
+        # the orchestrator "see" images with a model of the caller's choosing.
+        self.vision_model = vision_model or strong_model
         self.instructions = instructions
         
         # Callbacks (kept for backward compatibility with old scripts)
@@ -127,6 +149,19 @@ class OrchestratorBot(IOrchestratorBot):
             if mode == "plan":
                 system_prompt += "\n\n[MODO PLAN] Ignora todas tus herramientas. Devuelve ÚNICAMENTE un plan detallado paso a paso en texto plano/markdown para resolver la petición del usuario. NO EJECUTES HERRAMIENTAS."
 
+            # Vision turn: with tools bound, some models (e.g. gpt-4o-mini) refuse an
+            # image question ("no puedo ayudar") when no tool applies. So for image
+            # turns we call the model WITHOUT tools — vision Q&A rarely needs them.
+            has_image = _has_image_content(state.get("messages", []))
+            if has_image:
+                system_prompt += (
+                    "\n\n[IMAGEN] El usuario compartió una imagen. Analízala y responde "
+                    "directamente sobre lo que muestra de forma clara y útil."
+                )
+            # On image turns use the configured vision model (without tools);
+            # otherwise the regular tool-bound strong model.
+            active_model = self.vision_model.model if has_image else self.model_with_tools
+
             messages = [SystemMessage(content=system_prompt)] + state.get("messages", [])
 
             # Stream response to capture thinking
@@ -154,7 +189,7 @@ class OrchestratorBot(IOrchestratorBot):
                 nonlocal accumulated_chunk, thinking_emitted
                 accumulated_chunk = None
                 thinking_emitted = False
-                async for chunk in self.model_with_tools.astream(messages):
+                async for chunk in active_model.astream(messages):
                     if isinstance(chunk.content, list):
                         for part in chunk.content:
                             if isinstance(part, dict) and part.get("type") == "thinking":
@@ -169,7 +204,7 @@ class OrchestratorBot(IOrchestratorBot):
                 await _call_model_stream()
             except Exception:
                 # Fallback to invoke if streaming or retries fail
-                accumulated_chunk = await self.model_with_tools.ainvoke(messages)
+                accumulated_chunk = await active_model.ainvoke(messages)
 
             if accumulated_chunk is None:
                 response = AIMessage(content="")
@@ -332,24 +367,24 @@ class OrchestratorBot(IOrchestratorBot):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    async def astream_events(self, goal: str, mode: str = "ask", thread_id: str = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def astream_events(self, goal: str, mode: str = "ask", thread_id: str = None, images: Optional[List[str]] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """
         New Streaming API that yields typed events, completely decoupling logic from the UI.
         If `goal` is None/empty, it assumes we are resuming an interrupted state (from `Command`).
         """
         run_id = str(uuid.uuid4())[:8]
         current_thread = thread_id or run_id
-        
+
         config = {"configurable": {"thread_id": current_thread}}
-        
+
         from langgraph.types import Command
-        
+
         if goal:
             # First turn: provide initial state
             input_state = {
                 "goal": goal,
                 "mode": mode,
-                "messages": [HumanMessage(content=goal)],
+                "messages": [_build_user_message(goal, images)],
                 "session_id": current_thread,
                 "skills_dir": self.skills_dir,
                 "session_log": [],
@@ -373,18 +408,18 @@ class OrchestratorBot(IOrchestratorBot):
             # Yield structured events for the CLI
             yield event
 
-    async def arun(self, goal: str, context: str = "", thread_id: str = None) -> BotResponse:
+    async def arun(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
         """
         Legacy Async API for compatibility with `chat.py`.
         Consumes the stream silently until the end, ignoring interrupts (auto mode).
         """
         current_thread = thread_id or str(uuid.uuid4())[:8]
         config = {"configurable": {"thread_id": current_thread}}
-        
+
         initial_state = {
             "goal": goal,
             "mode": "auto",  # Force auto so we don't interrupt old scripts
-            "messages": [HumanMessage(content=goal)],
+            "messages": [_build_user_message(goal, images)],
             "session_id": current_thread,
             "skills_dir": self.skills_dir,
             "session_log": [],
@@ -408,7 +443,7 @@ class OrchestratorBot(IOrchestratorBot):
             goal=goal
         )
 
-    def run(self, goal: str, context: str = "", thread_id: str = None) -> BotResponse:
+    def run(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
         """Legacy Sync API."""
         try:
             loop = asyncio.get_event_loop()
@@ -417,7 +452,7 @@ class OrchestratorBot(IOrchestratorBot):
                 nest_asyncio.apply()
         except RuntimeError:
             pass
-        return asyncio.run(self.arun(goal, context, thread_id))
+        return asyncio.run(self.arun(goal, context, thread_id, images))
 
     def set_resume_command(self, resume_data: Any):
         from langgraph.types import Command
