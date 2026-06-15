@@ -34,6 +34,23 @@ def _has_image_content(messages) -> bool:
     return False
 
 
+def _build_user_message(text: str, images: Optional[List[str]] = None) -> HumanMessage:
+    """Build the user turn — plain text, or multimodal (text + images) for vision.
+
+    ``images`` is a list of image URLs / data-URLs. When present the message
+    content becomes the list format the chat models expect for vision so the
+    agent can actually "see" the image.
+    """
+    if not images:
+        return HumanMessage(content=text)
+    content: List[Dict[str, Any]] = []
+    if text:
+        content.append({"type": "text", "text": text})
+    for url in images:
+        content.append({"type": "image_url", "image_url": {"url": url}})
+    return HumanMessage(content=content)
+
+
 def _get_text_content(content) -> str:
     """Extract only the text (non-thinking) parts from a message content.
 
@@ -251,6 +268,7 @@ class ReactBot(IConversationBot):
         language_model: ILanguageModel,
         instructions: str,
         tools: Optional[List[BaseTool]] = None,
+        vision_model: Optional[ILanguageModel] = None,
         mcp_servers: Optional[Dict[str, Any]] = None,
         use_checkpointer: bool = False,
         thinking_budget: int = 8192,
@@ -269,6 +287,8 @@ class ReactBot(IConversationBot):
             language_model (ILanguageModel): The language model to use for generation
             instructions (str): System instructions for the bot
             tools (List[BaseTool], optional): LangChain tools to bind to the model
+            vision_model (ILanguageModel, optional): Model used for image (vision) turns.
+                Falls back to `language_model` when not provided.
             mcp_servers (Dict[str, Any], optional): MCP server configurations
             use_checkpointer (bool): Enable conversation persistence via LangGraph checkpoints
             thinking_budget (int): Token budget for native thinking models (ignored otherwise)
@@ -285,6 +305,10 @@ class ReactBot(IConversationBot):
             self.logger.addHandler(logging.NullHandler())
 
         self.language_model = language_model
+        # Model used for image (vision) turns. Falls back to the main model so
+        # existing callers keep working; pass a vision-capable model here to let
+        # ReactBot "see" images with a model of the caller's choosing.
+        self.vision_language_model = vision_model or language_model
         self.instructions = instructions
         self.thinking_budget = thinking_budget
         self.on_thinking = on_thinking
@@ -320,6 +344,9 @@ class ReactBot(IConversationBot):
             if self.tools
             else self.language_model.model
         )
+        # Tools-free model for image turns: with tools bound some models refuse an
+        # image question when no tool applies, so vision Q&A runs without tools.
+        self.vision_model = self.vision_language_model.model
 
         self.graph = self._create_workflow()
 
@@ -609,6 +636,10 @@ class ReactBot(IConversationBot):
             is_post_tool_step = any(
                 isinstance(msg, ToolMessage) for msg in state.get("messages", [])
             )
+            has_image = _has_image_content(state.get("messages", []))
+            # On image turns use the configured vision model (without tools);
+            # otherwise the regular tool-bound model.
+            active_model = self.vision_model if has_image else self.model_with_tools
 
             messages: List[BaseMessage] = [SystemMessage(content=system_content)]
 
@@ -629,7 +660,7 @@ class ReactBot(IConversationBot):
                         )
                     )
                 )
-            elif _has_image_content(state.get("messages", [])):
+            elif has_image:
                 # Vision turn: let the model read the image and answer directly.
                 # Forcing tool usage here makes some models refuse ("I can't help")
                 # when no tool applies to an image question.
@@ -665,11 +696,11 @@ class ReactBot(IConversationBot):
 
                 if self._is_deepseek_reasoner():
                     # DeepSeek R1: must use .invoke() for reasoning_content capture
-                    response = self.model_with_tools.invoke(messages, node_config)
+                    response = active_model.invoke(messages, node_config)
                 else:
                     # All other models: use .stream() so on_thinking fires progressively
                     accumulated_chunk = None
-                    for chunk in self.model_with_tools.stream(messages, node_config):
+                    for chunk in active_model.stream(messages, node_config):
                         # Emit Gemini thinking chunks as they arrive
                         if isinstance(chunk.content, list):
                             for part in chunk.content:
@@ -783,6 +814,7 @@ class ReactBot(IConversationBot):
         messages: List[Message] = None,
         logs: List[str] = None,
         user_message: str = None,
+        images: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Generate a response with logs and tool execution tracking.
@@ -795,6 +827,9 @@ class ReactBot(IConversationBot):
             messages (List[Message]): Historical conversation messages
             logs (List[str]): Historical logs for context
             user_message (str): Alias for user_input (ThinkBot compatibility)
+            images (List[str], optional): Image URLs / data-URLs for a vision turn.
+                When provided, the user message is sent as multimodal content so the
+                model can "see" the images (uses `vision_model` if configured).
 
         Returns:
             dict: Structured response with content, thinking, logs, tools_executed, token_usage
@@ -820,7 +855,7 @@ class ReactBot(IConversationBot):
         tool_logger.execution_logs.append(f"[USER] {actual_input}")
 
         initial_state: ChatState = {
-            "messages": limited_messages + [HumanMessage(content=actual_input)],
+            "messages": limited_messages + [_build_user_message(actual_input, images)],
             "logs": limited_logs,
             "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "thinking": "",
@@ -839,6 +874,7 @@ class ReactBot(IConversationBot):
         user_message: str,
         messages: List[Message],
         logs: List[str],
+        images: Optional[List[str]] = None,
     ) -> Generator[Dict[str, Any], None, None]:
         """Stream the response, yielding incremental chunks.
 
@@ -865,7 +901,7 @@ class ReactBot(IConversationBot):
         )
         tool_logger.execution_logs.append(f"[USER] {user_message}")
 
-        initial_messages = limited_messages + [HumanMessage(content=user_message)]
+        initial_messages = limited_messages + [_build_user_message(user_message, images)]
         initial_state: ChatState = {
             "messages": initial_messages,
             "logs": limited_logs,

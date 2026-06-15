@@ -23,24 +23,11 @@ from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
 from sonika_ai_toolkit.agents.orchestrator.events import StatusEvent
 from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
-from sonika_ai_toolkit.agents.react import extract_thinking, _has_image_content
-
-
-def _build_user_message(goal: str, images: Optional[List[str]] = None) -> HumanMessage:
-    """Build the user turn — plain text, or multimodal (text + images) for vision.
-
-    ``images`` is a list of image URLs / data-URLs. When present the message
-    content becomes the list format the chat models expect for vision so the
-    orchestrator's agent can actually "see" the image.
-    """
-    if not images:
-        return HumanMessage(content=goal)
-    content: List[Dict[str, Any]] = []
-    if goal:
-        content.append({"type": "text", "text": goal})
-    for url in images:
-        content.append({"type": "image_url", "image_url": {"url": url}})
-    return HumanMessage(content=content)
+from sonika_ai_toolkit.agents.react import (
+    extract_thinking,
+    _has_image_content,
+    _build_user_message,
+)
 
 
 def _is_rate_limit(exc: Exception) -> bool:
