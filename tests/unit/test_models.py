@@ -385,3 +385,108 @@ class TestAnthropicLanguageModel:
             ])
             chunks = list(lm.stream_response("hello"))
             assert chunks == ["chunk1", "chunk2"]
+
+
+# ---------------------------------------------------------------------------
+# Temperature compatibility (fixed-temperature model families + None)
+# ---------------------------------------------------------------------------
+
+from sonika_ai_toolkit.utilities.models import (
+    _openai_omits_temperature,
+    _anthropic_omits_temperature,
+    _temperature_kwargs,
+)
+
+
+class TestTemperatureHelpers:
+    @pytest.mark.parametrize(
+        "model_name",
+        ["o1", "o1-mini", "o3", "o3-mini", "o4-mini", "gpt-5", "gpt-5-mini", "O3-Pro"],
+    )
+    def test_openai_reasoning_models_omit_temperature(self, model_name):
+        assert _openai_omits_temperature(model_name) is True
+
+    @pytest.mark.parametrize("model_name", ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-nano"])
+    def test_openai_chat_models_keep_temperature(self, model_name):
+        assert _openai_omits_temperature(model_name) is False
+
+    @pytest.mark.parametrize("model_name", ["claude-opus-4-7", "claude-opus-4-8", "claude-opus-4-9"])
+    def test_anthropic_opus_47_plus_omit_temperature(self, model_name):
+        assert _anthropic_omits_temperature(model_name) is True
+
+    @pytest.mark.parametrize(
+        "model_name", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
+    )
+    def test_anthropic_other_models_keep_temperature(self, model_name):
+        assert _anthropic_omits_temperature(model_name) is False
+
+    def test_temperature_kwargs_none_omits(self):
+        assert _temperature_kwargs(None, omit=False, model_name="x") == {}
+
+    def test_temperature_kwargs_omit_flag_omits(self):
+        assert _temperature_kwargs(0.7, omit=True, model_name="x") == {}
+
+    def test_temperature_kwargs_passes_value(self):
+        assert _temperature_kwargs(0.3, omit=False, model_name="x") == {"temperature": 0.3}
+
+
+class TestOpenAITemperatureCompat:
+    def test_reasoning_model_omits_temperature(self):
+        with _patch_chat_openai() as MockChatOpenAI:
+            OpenAILanguageModel(api_key="key", model_name="o3-mini", temperature=0.7)
+            _, kwargs = MockChatOpenAI.call_args
+            assert "temperature" not in kwargs
+
+    def test_none_temperature_omits(self):
+        with _patch_chat_openai() as MockChatOpenAI:
+            OpenAILanguageModel(api_key="key", model_name="gpt-4o", temperature=None)
+            _, kwargs = MockChatOpenAI.call_args
+            assert "temperature" not in kwargs
+
+    def test_chat_model_keeps_temperature(self):
+        with _patch_chat_openai() as MockChatOpenAI:
+            OpenAILanguageModel(api_key="key", model_name="gpt-4o", temperature=0.5)
+            _, kwargs = MockChatOpenAI.call_args
+            assert kwargs.get("temperature") == 0.5
+
+
+class TestAnthropicTemperatureCompat:
+    def test_opus_47_plus_omits_temperature(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", model_name="claude-opus-4-8", temperature=0.7)
+            _, kwargs = MockAnthropic.call_args
+            assert "temperature" not in kwargs
+
+    def test_none_temperature_omits(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", model_name="claude-sonnet-4-6", temperature=None)
+            _, kwargs = MockAnthropic.call_args
+            assert "temperature" not in kwargs
+
+    def test_standard_model_keeps_temperature(self):
+        with _patch_anthropic() as MockAnthropic:
+            AnthropicLanguageModel(api_key="key", model_name="claude-sonnet-4-6", temperature=0.4)
+            _, kwargs = MockAnthropic.call_args
+            assert kwargs.get("temperature") == 0.4
+
+
+class TestDeepSeekTemperatureCompat:
+    def test_reasoner_omits_temperature(self):
+        with patch("sonika_ai_toolkit.utilities.models._DeepSeekReasonerChatModel") as MockReasoner:
+            DeepSeekLanguageModel(api_key="key", model_name="deepseek-reasoner", temperature=0.7)
+            _, kwargs = MockReasoner.call_args
+            assert "temperature" not in kwargs
+
+    def test_chat_keeps_temperature(self):
+        with _patch_chat_openai() as MockChatOpenAI:
+            DeepSeekLanguageModel(api_key="key", model_name="deepseek-chat", temperature=0.6)
+            _, kwargs = MockChatOpenAI.call_args
+            assert kwargs.get("temperature") == 0.6
+
+
+class TestGeminiTemperatureCompat:
+    def test_none_temperature_omits(self):
+        with _patch_gemini() as MockGemini:
+            GeminiLanguageModel(api_key="key", model_name="gemini-3.5-flash", temperature=None)
+            _, kwargs = MockGemini.call_args
+            assert "temperature" not in kwargs

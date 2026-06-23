@@ -10,6 +10,55 @@ from langchain_anthropic import ChatAnthropic
 
 from sonika_ai_toolkit.utilities.types import ILanguageModel
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Temperature compatibility
+# ---------------------------------------------------------------------------
+# Some model families only accept the provider's *default* temperature and
+# return an HTTP 400 if an explicit ``temperature`` value is sent. To let every
+# model work out of the box we detect those families by name and simply omit the
+# parameter (the provider then uses its own default). Callers can also force
+# this behaviour for any model by passing ``temperature=None``.
+
+# OpenAI reasoning families (o1/o3/o4/… and gpt-5*) reject custom temperatures.
+_OPENAI_FIXED_TEMPERATURE_PREFIXES = ("o1", "o2", "o3", "o4", "o5", "gpt-5")
+
+# Anthropic Opus 4.7+ reject an explicit ``temperature`` (observed HTTP 400).
+_ANTHROPIC_FIXED_TEMPERATURE_MARKERS = ("opus-4-7", "opus-4-8", "opus-4-9")
+
+
+def _openai_omits_temperature(model_name: str) -> bool:
+    """True if an OpenAI/DeepSeek-compatible model rejects custom temperature."""
+    name = (model_name or "").strip().lower()
+    return name.startswith(_OPENAI_FIXED_TEMPERATURE_PREFIXES)
+
+
+def _anthropic_omits_temperature(model_name: str) -> bool:
+    """True if an Anthropic model rejects an explicit temperature."""
+    name = (model_name or "").strip().lower()
+    return any(marker in name for marker in _ANTHROPIC_FIXED_TEMPERATURE_MARKERS)
+
+
+def _temperature_kwargs(temperature: Optional[float], *, omit: bool, model_name: str) -> dict:
+    """Build the ``temperature`` kwarg, omitting it when unsupported.
+
+    Returns ``{}`` (no temperature sent) when the caller passed ``None`` or the
+    model belongs to a fixed-temperature family; otherwise ``{"temperature": x}``.
+    """
+    if temperature is None:
+        return {}
+    if omit:
+        logger.info(
+            "Model %s only supports its default temperature; omitting the "
+            "explicit value %s.",
+            model_name,
+            temperature,
+        )
+        return {}
+    return {"temperature": temperature}
+
 
 class _DeepSeekReasonerChatModel(ChatOpenAI):
     """ChatOpenAI subclass that injects DeepSeek's ``reasoning_content`` field
@@ -35,21 +84,28 @@ class OpenAILanguageModel(ILanguageModel):
     Proporciona funcionalidades para generar respuestas y contar tokens.
     """
 
-    def __init__(self, api_key: str, model_name: str = "gpt-4o-mini", temperature: float = 0.7):
+    def __init__(self, api_key: str, model_name: str = "gpt-4o-mini", temperature: Optional[float] = 0.7):
         """
         Inicializa el modelo de lenguaje de OpenAI.
 
         Args:
             api_key (str): Clave API de OpenAI
             model_name (str): Nombre del modelo a utilizar
-            temperature (float): Temperatura para la generación de respuestas
+            temperature (float, optional): Temperatura para la generación de respuestas.
+                ``None`` (o un modelo de razonamiento o1/o3/o4/gpt-5) omite el
+                parámetro y deja que el proveedor use su valor por defecto.
         """
         from pydantic import SecretStr
+        temp_kwargs = _temperature_kwargs(
+            temperature,
+            omit=_openai_omits_temperature(model_name),
+            model_name=model_name,
+        )
         self.model = ChatOpenAI(
-            temperature=temperature, 
-            model=model_name, 
-            api_key=SecretStr(api_key), 
-            stream_usage=True
+            model=model_name,
+            api_key=SecretStr(api_key),
+            stream_usage=True,
+            **temp_kwargs,
         )
         self.supports_thinking = False
 
@@ -210,7 +266,7 @@ class GeminiLanguageModel(ILanguageModel):
         self,
         api_key: str,
         model_name: str = "gemini-3-flash-preview",
-        temperature: float = 0.7,
+        temperature: Optional[float] = 0.7,
         thinking_budget: Optional[int] = None,
     ):
         """
@@ -219,17 +275,17 @@ class GeminiLanguageModel(ILanguageModel):
         Args:
             api_key (str): Clave API de Google Gemini
             model_name (str): Nombre del modelo a utilizar
-            temperature (float): Temperatura para la generación de respuestas
+            temperature (float, optional): Temperatura para la generación de respuestas.
+                ``None`` omite el parámetro (usa el default del proveedor).
             thinking_budget (int, optional): Presupuesto de tokens para modelos con thinking nativo.
         """
-        logger = logging.getLogger(__name__)
         self.supports_thinking = any(
             marker in model_name.lower()
             for marker in ["-thinking", "thinking-exp", "gemini-2.5"]
         )
 
         effective_temperature = temperature
-        if self.supports_thinking and temperature != 1:
+        if self.supports_thinking and temperature is not None and temperature != 1:
             logger.warning(
                 "Gemini thinking models require temperature=1. Overriding provided value %s.",
                 temperature,
@@ -242,8 +298,10 @@ class GeminiLanguageModel(ILanguageModel):
             model_kwargs["thinking_budget"] = budget
             model_kwargs["include_thoughts"] = True
 
+        model_kwargs.update(
+            _temperature_kwargs(effective_temperature, omit=False, model_name=model_name)
+        )
         self.model = ChatGoogleGenerativeAI(
-            temperature=effective_temperature,
             model=model_name,
             google_api_key=api_key,
             **model_kwargs,
@@ -317,7 +375,7 @@ class AnthropicLanguageModel(ILanguageModel):
         self,
         api_key: str,
         model_name: str = "claude-haiku-4-5",
-        temperature: float = 0.7,
+        temperature: Optional[float] = 0.7,
         max_tokens: int = 4096,
         thinking_budget: Optional[int] = None,
     ):
@@ -327,33 +385,40 @@ class AnthropicLanguageModel(ILanguageModel):
         Args:
             api_key (str): Clave API de Anthropic
             model_name (str): Nombre del modelo a utilizar (ej: claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-8)
-            temperature (float): Temperatura para la generación de respuestas
+            temperature (float, optional): Temperatura para la generación de respuestas.
+                ``None`` (o un modelo Opus 4.7+ que rechaza el parámetro) lo omite
+                y deja que el proveedor use su valor por defecto.
             max_tokens (int): Máximo de tokens de salida (Anthropic lo exige; default razonable)
             thinking_budget (int, optional): Presupuesto de tokens para extended thinking.
                 Si se especifica, activa el razonamiento extendido y fuerza temperature=1.
         """
         from pydantic import SecretStr
-        logger = logging.getLogger(__name__)
 
         self.supports_thinking = thinking_budget is not None
         effective_temperature = temperature
         model_kwargs: dict = {}
 
         if self.supports_thinking:
-            if temperature != 1:
+            if temperature is not None and temperature != 1:
                 logger.warning(
                     "Anthropic extended thinking requires temperature=1. Overriding provided value %s.",
                     temperature,
                 )
-                effective_temperature = 1.0
+            effective_temperature = 1.0
             # max_tokens debe ser mayor que el presupuesto de thinking
             if max_tokens <= thinking_budget:
                 max_tokens = thinking_budget + 1024
             model_kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
+        model_kwargs.update(
+            _temperature_kwargs(
+                effective_temperature,
+                omit=_anthropic_omits_temperature(model_name),
+                model_name=model_name,
+            )
+        )
         self.model = ChatAnthropic(
             model=model_name,
-            temperature=effective_temperature,
             max_tokens=max_tokens,
             api_key=SecretStr(api_key),
             **model_kwargs,
@@ -419,23 +484,30 @@ class DeepSeekLanguageModel(ILanguageModel):
     Proporciona funcionalidades para generar respuestas y contar tokens.
     """
 
-    def __init__(self, api_key: str, model_name: str = "deepseek-chat", temperature: float = 0.7):
+    def __init__(self, api_key: str, model_name: str = "deepseek-chat", temperature: Optional[float] = 0.7):
         """
         Inicializa el modelo de lenguaje de DeepSeek.
 
         Args:
             api_key (str): Clave API de DeepSeek
             model_name (str): Nombre del modelo a utilizar
-            temperature (float): Temperatura para la generación de respuestas
+            temperature (float, optional): Temperatura para la generación de respuestas.
+                ``None`` (o ``deepseek-reasoner``, que no admite temperatura) la omite.
         """
         from pydantic import SecretStr
         is_reasoner = model_name == "deepseek-reasoner" or "r1" in model_name.lower()
         model_class = _DeepSeekReasonerChatModel if is_reasoner else ChatOpenAI
+        # El reasoner (R1) no soporta ``temperature``; lo omitimos para evitar errores.
+        temp_kwargs = _temperature_kwargs(
+            temperature,
+            omit=is_reasoner or _openai_omits_temperature(model_name),
+            model_name=model_name,
+        )
         self.model = model_class(
-            temperature=temperature,
             model=model_name,
             api_key=SecretStr(api_key),
             base_url="https://api.deepseek.com",
+            **temp_kwargs,
         )
         self.supports_thinking = is_reasoner
 
