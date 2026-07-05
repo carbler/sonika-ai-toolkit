@@ -132,7 +132,101 @@ result.success          # bool
 result.plan             # List[dict]
 result.session_id       # Optional[str]
 result.goal             # Optional[str]
+result.questions        # List[dict]  — structured questions the agent asks
+result.needs_input      # bool        — True when waiting for answers
 ```
+
+## Structured User Questions (`ask_user`)
+
+Both **ReactBot** and **OrchestratorBot** can pause and ask the caller
+*structured* questions — instead of burying a question in free text — so a UI can
+render inputs, radio buttons, or checkboxes and send back typed answers.
+
+The mechanism is a **signal tool** (`ask_user`): the model calls it with a
+schema-validated payload; the bot intercepts the call and surfaces the questions
+rather than executing an action. Enable it with `enable_user_questions=True`.
+
+### Question schema
+
+```python
+from sonika_ai_toolkit import Question, QuestionOption, AskUserSchema
+
+# Each question the model emits:
+# {
+#   "id":       "color",                 # stable key; answers are keyed by it
+#   "text":     "¿Qué color prefieres?",
+#   "type":     "single_choice",         # text | single_choice | multi_choice | boolean | number
+#   "options":  [{"value": "r", "label": "Rojo"}, ...],  # for *_choice types
+#   "required": True,
+# }
+```
+
+### ReactBot — stateless (ends the turn, resume on the next call)
+
+```python
+from sonika_ai_toolkit.agents.react import ReactBot
+
+bot = ReactBot(
+    language_model=lm,
+    instructions="...",
+    enable_user_questions=True,   # registers the ask_user tool
+)
+
+result = bot.get_response(user_input="Quiero reservar un vuelo")
+
+if result.needs_input:
+    answers = render_and_collect(result.questions)   # your UI draws the form
+    # Feed the answers back as the next user turn (with history):
+    followup = bot.get_response(
+        user_input=f"Mis respuestas: {answers}",
+        messages=history,
+    )
+```
+
+`stream_response()` also emits a dedicated event when the agent asks:
+
+```python
+for event in bot.stream_response(user_message="...", messages=[], logs=[]):
+    if event["type"] == "questions":
+        render_and_collect(event["questions"])   # {"type","questions","reason"}
+```
+
+### OrchestratorBot — stateful (pauses via interrupt, resumes the *same* run)
+
+The orchestrator reuses the native LangGraph interrupt, so it keeps all context
+and continues where it left off once you provide the answers.
+
+```python
+from sonika_ai_toolkit import OrchestratorBot
+
+bot = OrchestratorBot(
+    strong_model=lm, fast_model=lm,
+    instructions="...",
+    enable_user_questions=True,
+)
+
+async for stream_mode, payload in bot.astream_events(goal, mode="ask", thread_id="t1"):
+    if stream_mode == "updates" and "__interrupt__" in payload:
+        interrupt = payload["__interrupt__"][0].value       # QuestionEvent
+        if interrupt["type"] == "question_request":
+            answers = render_and_collect(interrupt["questions"])   # {id: answer}
+            bot.set_resume_command(answers)
+
+# Resume the same run — the model now has the answers in context:
+async for stream_mode, payload in bot.astream_events(None, mode="ask", thread_id="t1"):
+    ...
+```
+
+`run()` / `arun()` (non-streaming) also expose `result.questions` and
+`result.needs_input` when the model asks.
+
+> **Difference by design.** OrchestratorBot resumes without losing state (same
+> run). ReactBot is stateless, so it ends the turn and resumes on the next
+> `get_response()` call with the answers passed back as input.
+
+See [`examples/ask_user_console.py`](https://github.com/carbler/sonika-ai-toolkit/blob/main/examples/ask_user_console.py)
+for a runnable console UI that renders the questions and collects typed answers
+for both agents.
 
 ## Interface Hierarchy
 

@@ -14,6 +14,11 @@ from langchain_community.callbacks.manager import get_openai_callback
 from langgraph.config import get_config
 
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel, Message
+from sonika_ai_toolkit.utilities.questions import (
+    ASK_USER_TOOL_NAME,
+    questions_to_payload,
+    questions_summary,
+)
 from sonika_ai_toolkit.agents.base import IConversationBot
 
 
@@ -136,6 +141,7 @@ class ChatState(TypedDict):
     logs: List[str]
     token_usage: Dict[str, int]
     thinking: str
+    pending_questions: Optional[Dict[str, Any]]
 
 
 # ============= CALLBACK HANDLER =============
@@ -279,6 +285,7 @@ class ReactBot(IConversationBot):
         on_tool_end: Optional[Callable[[str, str], None]] = None,
         on_tool_error: Optional[Callable[[str, str], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
+        enable_user_questions: bool = False,
     ):
         """
         Initialize the ReactBot with optional MCP, thinking, and callback support.
@@ -299,6 +306,10 @@ class ReactBot(IConversationBot):
             on_tool_end (Callable[[str, str], None], optional): Callback when a tool completes
             on_tool_error (Callable[[str, str], None], optional): Callback when a tool fails
             on_thinking (Callable[[str], None], optional): Callback for reasoning chunks
+            enable_user_questions (bool): When True, register the `ask_user` tool so
+                the model can ask structured questions. The turn ends and the result
+                carries `questions` + `needs_input=True`; feed the answers back on the
+                next `get_response` call.
         """
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -328,6 +339,15 @@ class ReactBot(IConversationBot):
 
         if mcp_servers:
             self._initialize_mcp(mcp_servers)
+
+        # Register the structured-question tool so the model can pause and ask the
+        # caller for missing info in a UI-renderable way (see agents/questions.py).
+        self.enable_user_questions = enable_user_questions
+        if enable_user_questions and not any(
+            getattr(t, "name", None) == ASK_USER_TOOL_NAME for t in self.tools
+        ):
+            from sonika_ai_toolkit.tools.ask_user import AskUserQuestionTool
+            self.tools.append(AskUserQuestionTool())
 
         self.supports_native_thinking = bool(getattr(self.language_model, "supports_thinking", False))
         self.model_name = getattr(self.language_model.model, "model_name", "")
@@ -422,6 +442,14 @@ class ReactBot(IConversationBot):
                 final_response = self._clean_content(msg.content)
                 break
 
+        pending = state.get("pending_questions") or {}
+        questions = pending.get("questions") or []
+
+        # When the agent asked the user, there's no final answer yet — use the
+        # question summary as content so plain-text consumers still see something.
+        if questions and not final_response:
+            final_response = questions_summary(pending)
+
         if final_response:
             tool_logger.execution_logs.append(f"[BOT] {final_response}")
 
@@ -431,6 +459,8 @@ class ReactBot(IConversationBot):
             logs=limited_logs + tool_logger.execution_logs,
             tools_executed=tool_logger.tool_executions,
             token_usage=token_usage,
+            questions=questions,
+            needs_input=bool(questions),
         )
 
     def _initialize_mcp(self, mcp_servers: Dict[str, Any]):
@@ -741,12 +771,31 @@ class ReactBot(IConversationBot):
                 )
                 return {"messages": [fallback]}
 
+        def ask_user_node(state: ChatState) -> Dict[str, Any]:
+            """Terminal node: capture the ask_user questions and end the turn.
+
+            ReactBot is stateless, so we surface the structured questions in the
+            BotResponse and stop. The caller collects answers and calls
+            get_response() again with them as the next user input.
+            """
+            last_message = state["messages"][-1]
+            payload: Dict[str, Any] = {}
+            for tc in getattr(last_message, "tool_calls", None) or []:
+                if tc.get("name") == ASK_USER_TOOL_NAME:
+                    payload = questions_to_payload(tc.get("args", {}))
+                    break
+            return {"pending_questions": payload}
+
         def should_continue(state: ChatState) -> str:
-            """Determine if tools should be executed."""
+            """Determine if tools should be executed, or the agent asked the user."""
             last_message = state["messages"][-1]
             if (isinstance(last_message, AIMessage) and
                     hasattr(last_message, 'tool_calls') and
                     last_message.tool_calls):
+                # If the model asked the user, pause the turn (asking wins over
+                # any other tool call requested in the same step).
+                if any(tc.get("name") == ASK_USER_TOOL_NAME for tc in last_message.tool_calls):
+                    return "ask_user"
                 return "tools"
             return "end"
 
@@ -755,6 +804,7 @@ class ReactBot(IConversationBot):
 
         if self.tools:
             workflow.add_node("tools", self.tool_validator_node)
+            workflow.add_node("ask_user", ask_user_node)
 
         workflow.set_entry_point("agent")
 
@@ -764,10 +814,12 @@ class ReactBot(IConversationBot):
                 should_continue,
                 {
                     "tools": "tools",
+                    "ask_user": "ask_user",
                     "end": END
                 }
             )
             workflow.add_edge("tools", "agent")
+            workflow.add_edge("ask_user", END)
         else:
             workflow.add_edge("agent", END)
 
@@ -882,6 +934,7 @@ class ReactBot(IConversationBot):
             {"type": "thinking", "chunk": str}   — reasoning token (real-time for native models)
             {"type": "tool_call", "chunk": str}  — tool call being dispatched
             {"type": "content",  "chunk": str}   — response text token
+            {"type": "questions", "questions": list, "reason": str|None} — agent asks the user
             {"type": "done",     "result": dict} — full response (same structure as get_response)
 
         For native thinking models (DeepSeek R1, Gemini thinking): thinking and content
@@ -913,10 +966,21 @@ class ReactBot(IConversationBot):
         final_state: ChatState = initial_state
         previous_messages: List[BaseMessage] = list(initial_messages)
         previous_thinking = ""
+        questions_emitted = False
 
         with get_openai_callback() as cb:
             for state in self.graph.stream(initial_state, config=config, stream_mode="values"):
                 final_state = state
+
+                # Emit structured questions as soon as the agent asks the user.
+                pending = state.get("pending_questions") or {}
+                if pending.get("questions") and not questions_emitted:
+                    questions_emitted = True
+                    yield {
+                        "type": "questions",
+                        "questions": pending["questions"],
+                        "reason": pending.get("reason"),
+                    }
 
                 # Emit new thinking (complete chunk per agent invocation)
                 current_thinking = state.get("thinking", "")

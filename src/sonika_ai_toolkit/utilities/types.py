@@ -17,6 +17,8 @@ class BotResponse(dict):
     logs           — execution log lines (List[str])
     tools_executed — [{tool_name, args, status, output}, …] (List[dict])
     token_usage    — {prompt_tokens, completion_tokens, total_tokens}
+    questions      — structured questions the agent asks the caller (List[dict])
+    needs_input    — True when the agent is waiting for answers to `questions`
 
     OrchestratorBot extras
     ----------------------
@@ -50,6 +52,16 @@ class BotResponse(dict):
             "token_usage",
             {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         )
+
+    @property
+    def questions(self) -> List[Dict[str, Any]]:
+        """Structured questions the agent is asking the caller (empty if none)."""
+        return self.get("questions", [])
+
+    @property
+    def needs_input(self) -> bool:
+        """True when the agent paused to ask `questions` and awaits answers."""
+        return self.get("needs_input", False)
 
     # ── OrchestratorBot extras ──────────────────────────────────────────────
 

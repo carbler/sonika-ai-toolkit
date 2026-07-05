@@ -1,6 +1,7 @@
 """OrchestratorBot — autonomous orchestration engine (Fast ReAct Edition)."""
 
 import asyncio
+import json
 import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional, AsyncGenerator
@@ -18,6 +19,11 @@ from tenacity import (
 )
 
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
+from sonika_ai_toolkit.utilities.questions import (
+    ASK_USER_TOOL_NAME,
+    questions_to_payload,
+    questions_summary,
+)
 from sonika_ai_toolkit.tools.registry import ToolRegistry
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
@@ -80,6 +86,7 @@ class OrchestratorBot(IOrchestratorBot):
         logger: Optional[logging.Logger] = None,
         prompts: Optional[Any] = None, # Legacy
         checkpointer: Any = None,
+        enable_user_questions: bool = False,
     ):
         self.model = strong_model
         # Model used for image (vision) turns. Falls back to the strong model so
@@ -106,6 +113,15 @@ class OrchestratorBot(IOrchestratorBot):
         for tool in tools or []:
             self.registry.register(tool)
             self.tools.append(tool)
+
+        # Register the structured-question tool so the model can pause and ask the
+        # caller via a native LangGraph interrupt (see tools_node interception).
+        self.enable_user_questions = enable_user_questions
+        if enable_user_questions and not self.registry.get(ASK_USER_TOOL_NAME):
+            from sonika_ai_toolkit.tools.ask_user import AskUserQuestionTool
+            ask_tool = AskUserQuestionTool()
+            self.registry.register(ask_tool)
+            self.tools.append(ask_tool)
 
         self.model_with_tools = self.model.model.bind_tools(self.tools) if self.tools else self.model.model
         self.checkpointer = checkpointer or MemorySaver()
@@ -266,7 +282,29 @@ class OrchestratorBot(IOrchestratorBot):
                 if not tool_instance:
                     results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: Tool '{tool_name}' not found."))
                     continue
-                
+
+                # Structured question: pause via native interrupt and wait for the
+                # caller's answers (delivered through set_resume_command()). The
+                # loop then continues in the SAME run with the answers in context.
+                if tool_name == ASK_USER_TOOL_NAME:
+                    payload = questions_to_payload(tool_args)
+                    answers = interrupt({"type": "question_request", **payload})
+                    answer_text = (
+                        answers if isinstance(answers, str)
+                        else json.dumps(answers, ensure_ascii=False, default=str)
+                    )
+                    results.append(ToolMessage(
+                        tool_call_id=tool_call["id"],
+                        content=f"User answers: {answer_text}",
+                    ))
+                    tools_executed.append({
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "success",
+                        "output": str(answer_text)[:500],
+                    })
+                    continue
+
                 risk_level = getattr(tool_instance, "risk_level", getattr(tool_instance, "risk_hint", 0))
                 
                 if state.get("mode", "ask") == "ask" and risk_level > 0:
@@ -417,9 +455,16 @@ class OrchestratorBot(IOrchestratorBot):
         
         # In `arun` (used by older tests/chat.py), we just want the final result
         final_state = await self.graph.ainvoke(initial_state, config=config)
-        
+
+        # If the agent called ask_user, the graph paused on a native interrupt.
+        # Surface the structured questions so non-streaming callers can react.
+        question_payload = self._extract_question_interrupt(final_state)
+        content = final_state.get("final_report", "")
+        if question_payload and not content:
+            content = questions_summary(question_payload)
+
         return BotResponse(
-            content=final_state.get("final_report", ""),
+            content=content,
             thinking=final_state.get("thinking", None),
             tools_executed=final_state.get("tools_executed", []),
             logs=final_state.get("session_log", []),
@@ -427,8 +472,26 @@ class OrchestratorBot(IOrchestratorBot):
             success=True,
             plan=[],
             session_id=current_thread,
-            goal=goal
+            goal=goal,
+            questions=question_payload.get("questions", []) if question_payload else [],
+            needs_input=bool(question_payload),
         )
+
+    @staticmethod
+    def _extract_question_interrupt(final_state: Any) -> Optional[Dict[str, Any]]:
+        """Return the question_request payload if the run paused on an ask_user interrupt."""
+        interrupts = None
+        if isinstance(final_state, dict):
+            interrupts = final_state.get("__interrupt__")
+        if not interrupts:
+            return None
+        if not isinstance(interrupts, (list, tuple)):
+            interrupts = [interrupts]
+        for it in interrupts:
+            value = getattr(it, "value", it)
+            if isinstance(value, dict) and value.get("type") == "question_request":
+                return value
+        return None
 
     def run(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
         """Legacy Sync API."""

@@ -56,6 +56,9 @@ from sonika_ai_toolkit import (
     AgentUpdate,           # "agent" node payload
     ToolsUpdate,           # "tools" node payload
     ToolRecord,            # individual tool execution record
+    QuestionEvent,         # ask_user interrupt payload
+    QuestionItem,          # a single structured question
+    QuestionOptionEvent,   # a choice inside a QuestionItem
 )
 ```
 
@@ -63,6 +66,28 @@ from sonika_ai_toolkit import (
 
 ```python
 {"type": "retrying", "reason": "rate_limit", "attempt": 1, "wait_s": 2.0}
+```
+
+### QuestionEvent
+
+Payload of a `question_request` interrupt, emitted when the agent calls the
+`ask_user` tool (see [Agents — Structured User Questions](agents.md#structured-user-questions-ask_user)).
+Resume with `set_resume_command({question_id: answer})`.
+
+```python
+{
+    "type": "question_request",
+    "reason": "Necesito datos para continuar",
+    "questions": [
+        {
+            "id": "color",
+            "text": "¿Qué color prefieres?",
+            "type": "single_choice",   # text | single_choice | multi_choice | boolean | number
+            "options": [{"value": "r", "label": "Rojo"}],
+            "required": True,
+        }
+    ],
+}
 ```
 
 ### PartialResponseEvent

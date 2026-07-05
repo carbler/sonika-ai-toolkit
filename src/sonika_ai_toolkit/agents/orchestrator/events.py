@@ -22,6 +22,33 @@ class PartialResponseEvent(TypedDict):
     turn: int
 
 
+class QuestionOptionEvent(TypedDict, total=False):
+    """A selectable choice inside a QuestionItem."""
+    value: str
+    label: str
+
+
+class QuestionItem(TypedDict, total=False):
+    """A single structured question surfaced to the consumer."""
+    id: str
+    text: str
+    type: str  # text | single_choice | multi_choice | boolean | number
+    options: List[QuestionOptionEvent]
+    required: bool
+
+
+class QuestionEvent(TypedDict, total=False):
+    """Payload of a ``question_request`` LangGraph interrupt.
+
+    Emitted when the agent calls the ``ask_user`` tool: it needs structured input
+    from the caller before it can continue.  Resume with ``set_resume_command()``
+    passing a dict of ``{question_id: answer}`` (or plain text for a single ask).
+    """
+    type: Literal["question_request"]
+    questions: List[QuestionItem]
+    reason: Optional[str]
+
+
 class ToolRecord(TypedDict):
     """A record of a single tool execution captured by the tools node."""
     tool_name: str

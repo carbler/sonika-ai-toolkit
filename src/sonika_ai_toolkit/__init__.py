@@ -14,10 +14,22 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     ToolRecord,
     StatusEvent,
     PartialResponseEvent,
+    QuestionEvent,
+    QuestionItem,
+    QuestionOptionEvent,
 )
 
 # Response type
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
+
+# Structured user-questions contract
+from sonika_ai_toolkit.utilities.questions import (
+    Question,
+    QuestionOption,
+    AskUserSchema,
+    ASK_USER_TOOL_NAME,
+)
+from sonika_ai_toolkit.tools.ask_user import AskUserQuestionTool
 
 # Language model implementations
 from sonika_ai_toolkit.utilities.models import (
@@ -75,9 +87,18 @@ __all__ = [
     "ToolRecord",
     "StatusEvent",
     "PartialResponseEvent",
+    "QuestionEvent",
+    "QuestionItem",
+    "QuestionOptionEvent",
     # Types
     "BotResponse",
     "ILanguageModel",
+    # Structured user questions
+    "Question",
+    "QuestionOption",
+    "AskUserSchema",
+    "AskUserQuestionTool",
+    "ASK_USER_TOOL_NAME",
     # Models
     "GeminiLanguageModel",
     "OpenAILanguageModel",
