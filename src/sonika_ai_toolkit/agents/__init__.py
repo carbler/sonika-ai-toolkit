@@ -1,5 +1,4 @@
 from sonika_ai_toolkit.agents.react import ReactBot
-from sonika_ai_toolkit.agents.tasker.tasker_bot import TaskerBot
 from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
 
 try:
@@ -12,6 +11,5 @@ except ImportError:
 __all__ = [
     "ReactBot",
     "ThinkBot",
-    "TaskerBot",
     "OrchestratorBot",
 ]

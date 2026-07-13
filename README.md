@@ -33,7 +33,6 @@ AWS_REGION=us-east-1
 
 - **Multi-Model Support**: Agnostic integration with OpenAI, DeepSeek, Google Gemini, and Amazon Bedrock.
 - **Conversational Agent**: Robust agent (`ReactBot`) with native tool execution and LangGraph state management.
-- **Tasker Agent**: Planner-executor agent (`TaskerBot`) for complex multi-step tasks.
 - **Orchestrator Agent**: Autonomous goal-driven agent (`OrchestratorBot`) with async streaming, persistent memory, LangGraph interrupts for human-in-the-loop, and rate-limit retry with progress events.
 - **Formal Interface Contracts**: `IConversationBot` and `IOrchestratorBot` ABCs ensure stable APIs across agent implementations.
 - **Typed Stream Events**: `StatusEvent`, `PartialResponseEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
@@ -201,7 +200,6 @@ print(result.result)
 | Agent | Class | Interface | Use Case |
 |-------|-------|-----------|----------|
 | **ReactBot** | `agents.react.ReactBot` | `IConversationBot` | Single-turn conversation + tools |
-| **TaskerBot** | `agents.tasker.TaskerBot` | `IConversationBot` | Multi-step planner-executor |
 | **OrchestratorBot** | `agents.orchestrator.graph.OrchestratorBot` | `IOrchestratorBot` | Autonomous goal-driven agent |
 
 All agents return `BotResponse` — a `dict` subclass with typed property accessors (`.content`, `.thinking`, `.tools_executed`, `.token_usage`).
@@ -289,7 +287,6 @@ src/sonika_ai_toolkit/
 ├── agents/
 │   ├── base.py              # IBot, IConversationBot ABCs
 │   ├── react.py             # ReactBot(IConversationBot)
-│   ├── tasker/              # TaskerBot(IConversationBot)
 │   └── orchestrator/
 │       ├── graph.py         # OrchestratorBot(IOrchestratorBot)
 │       ├── interface.py     # IOrchestratorBot ABC

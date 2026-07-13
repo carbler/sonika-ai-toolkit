@@ -60,7 +60,7 @@ The project uses **MkDocs Material** for documentation, hosted on GitHub Pages.
 docs/
 ├── index.md               # Overview + quick example + navigation links
 ├── getting-started.md     # Installation, API keys, first agent, first classifier
-├── agents.md              # ReactBot, TaskerBot, OrchestratorBot (modes, streaming, BotResponse)
+├── agents.md              # ReactBot, OrchestratorBot (modes, streaming, BotResponse)
 ├── classifiers.md         # TextClassifier, Intent, Sentiment, Safety, Image — with examples
 ├── models.md              # OpenAI, Gemini, DeepSeek, Bedrock — config + gotchas
 ├── tools.md               # 18 built-in tools + custom tool creation with Pydantic
@@ -113,7 +113,6 @@ tests/
 │   │   └── test_loader.py            # Skill.from_dir, load_skills, merge/render helpers
 │   ├── agents/
 │   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow + skills
-│   │   ├── test_tasker.py            # TaskerBot construction / get_response / limits / skills / node overrides
 │   │   └── orchestrator/
 │   │       ├── test_contract.py      # Interface contract tests
 │   │       ├── test_graph.py         # agent/tools graph, partial responses
@@ -172,7 +171,7 @@ All agents share a common ABC lineage:
 
 ```
 IBot (ABC)
-├── IConversationBot    — ReactBot, TaskerBot
+├── IConversationBot    — ReactBot
 │     get_response(user_input, messages, logs) → BotResponse
 └── IOrchestratorBot    — OrchestratorBot
       astream_events(goal, mode, thread_id) → AsyncGenerator
@@ -191,7 +190,7 @@ All agents return a `BotResponse` — a `dict` subclass fully backward-compatibl
 ```python
 from sonika_ai_toolkit.utilities.types import BotResponse
 
-result = bot.get_response(...)   # ReactBot / TaskerBot
+result = bot.get_response(...)   # ReactBot
 result = bot.run(...)            # OrchestratorBot
 
 # dict-style (existing code unchanged)
@@ -238,13 +237,11 @@ Import these types in consumers instead of hardcoding dict keys.
 
 ### Agents (`src/sonika_ai_toolkit/agents/`)
 
-Three architectures for different use cases:
+Two architectures for different use cases:
 
 1. **ReactBot** (`react.py`): Standard ReAct loop via LangGraph. Implements `IConversationBot`. Handles tool execution, token tracking, `_InternalToolLogger` callback. Returns `BotResponse`.
 
-2. **TaskerBot** (`tasker/`): Planner→Executor→Validator→Output→Logger graph for complex multi-step tasks. Implements `IConversationBot`. Nodes under `tasker/nodes/`. Returns `BotResponse`.
-
-3. **OrchestratorBot** (`orchestrator/`): Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API. Implements `IOrchestratorBot`.
+2. **OrchestratorBot** (`orchestrator/`): Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API. Implements `IOrchestratorBot`.
 
 ### OrchestratorBot — How it works
 
@@ -296,18 +293,16 @@ unaffected (planning protocol not appended there).
 consumer LangGraph nodes at `"start"` (entry → agent, once), `"after_tools"`
 (tools → agent edge, every loop) or `"end"` (agent final turn → END). Names
 `agent`/`tools` are reserved; multiple nodes at one position chain in list
-order; updates stream under the node's own name. TaskerBot instead accepts
-node *instance overrides* (`planner_node=`, `executor_node=`, `validator_node=`,
-`output_node=`, `logger_node=`) — swap implementations, topology fixed.
+order; updates stream under the node's own name.
 
-**Skills (all three bots — `skills=[Skill, ...]` and/or `skills_dir="./skills"`):**
+**Skills (both bots — `skills=[Skill, ...]` and/or `skills_dir="./skills"`):**
 
 Folder-based capability packs (`src/sonika_ai_toolkit/skills/loader.py`): each
 subfolder has a `SKILL.md` (optional `---` frontmatter `name:`/`description:`;
 body = instructions) and optional `tools.py` (BaseTool subclasses defined in
 the file are instantiated — imported classes ignored). Instructions render as
 a `## SKILLS` block appended to the system prompt (ReactBot
-`_build_system_prompt`, Orchestrator `agent_node`, Tasker planner prompt);
+`_build_system_prompt`, Orchestrator `agent_node`);
 tools merge into the bot's list **before** bind_tools, deduped by name with
 explicitly-passed tools winning. Broken skills are logged and skipped.
 `tools.py` executes arbitrary Python — only trusted directories. NOTE:

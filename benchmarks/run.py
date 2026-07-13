@@ -11,7 +11,7 @@ Examples
 
     # Full matrix: every agent × two models
     python benchmarks/run.py \
-        --agents react,tasker,orchestrator \
+        --agents react,orchestrator \
         --models openai:gpt-4o-mini,gemini:gemini-2.5-flash
 
 Model spec is ``provider:model_name`` (provider alone uses a default model).

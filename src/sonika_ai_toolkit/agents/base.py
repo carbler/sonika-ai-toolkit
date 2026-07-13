@@ -15,7 +15,7 @@ class IBot(ABC):
 
 class IConversationBot(IBot):
     """
-    Contract for stateless conversational agents (ReactBot, TaskerBot).
+    Contract for stateless conversational agents (ReactBot).
     Input: message + history.  Output: BotResponse.
     """
 

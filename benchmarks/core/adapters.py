@@ -1,9 +1,8 @@
 """Agent adapters — run any agent behind one interface.
 
-The three agents have different constructors and entrypoints:
+The two agents have different constructors and entrypoints:
 
     ReactBot        get_response(user_input, messages, logs)
-    TaskerBot       get_response(user_input, messages, logs)  (+ embeddings, tone…)
     OrchestratorBot run(goal, context)                        (+ strong/fast model, memory_path)
 
 Each adapter normalizes construction + invocation and returns the unified
@@ -15,7 +14,6 @@ import shutil
 import tempfile
 
 from sonika_ai_toolkit.agents.react import ReactBot
-from sonika_ai_toolkit.agents.tasker.tasker_bot import TaskerBot
 from sonika_ai_toolkit.utilities.types import Message
 
 from benchmarks.tools.support_tools import build_tools
@@ -29,7 +27,7 @@ INSTRUCTIONS = (
     "Be concise and state clearly what action you took."
 )
 
-AGENT_KINDS = ("react", "tasker", "orchestrator")
+AGENT_KINDS = ("react", "orchestrator")
 
 
 def _history_messages(scenario):
@@ -48,23 +46,6 @@ def run_react(model, scenario):
     bot = ReactBot(
         language_model=model,
         instructions=INSTRUCTIONS,
-        tools=build_tools(scenario.tools),
-    )
-    return bot.get_response(
-        user_input=scenario.goal,
-        messages=_history_messages(scenario),
-        logs=[],
-    )
-
-
-def run_tasker(model, scenario):
-    bot = TaskerBot(
-        language_model=model,
-        embeddings=None,                 # not used at runtime
-        function_purpose=INSTRUCTIONS,
-        personality_tone="Professional and concise.",
-        limitations="Only act on the current customer.",
-        dynamic_info="",
         tools=build_tools(scenario.tools),
     )
     return bot.get_response(
@@ -95,7 +76,6 @@ def run_orchestrator(model, scenario):
 
 _RUNNERS = {
     "react": run_react,
-    "tasker": run_tasker,
     "orchestrator": run_orchestrator,
 }
 

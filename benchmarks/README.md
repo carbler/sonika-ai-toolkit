@@ -1,6 +1,6 @@
 # Benchmarks
 
-A standalone harness to compare **agents** (ReactBot, TaskerBot, OrchestratorBot)
+A standalone harness to compare **agents** (ReactBot, OrchestratorBot)
 and **models** (OpenAI, Gemini, DeepSeek, Anthropic) under **measurable,
 reproducible** conditions. It is **not** part of the pytest suite — it makes real
 API calls and needs keys.
@@ -28,7 +28,7 @@ python benchmarks/run.py --models openai:gpt-4o-mini,anthropic:claude-haiku-4-5
 
 # Full matrix: every agent × two models
 python benchmarks/run.py \
-    --agents react,tasker,orchestrator \
+    --agents react,orchestrator \
     --models openai:gpt-4o-mini,gemini:gemini-2.5-flash
 
 # Run a subset of scenarios
@@ -60,7 +60,7 @@ benchmarks/
 ├── run.py                       # CLI entrypoint (agent × model × scenario matrix)
 ├── core/
 │   ├── models.py                # "provider:model" -> ILanguageModel
-│   ├── adapters.py              # normalize React/Tasker/Orchestrator behind one call
+│   ├── adapters.py              # normalize React/Orchestrator behind one call
 │   ├── scenario.py              # Scenario / RunResult dataclasses
 │   ├── checks.py                # declarative check factories (called, content_contains, …)
 │   ├── runner.py                # matrix loop + precision/recall/F1
@@ -82,5 +82,5 @@ benchmarks/
 
 ### Note on tool-arg checks
 Tool-call accuracy is **name-based** on purpose: ReactBot's `tools_executed`
-records don't include call `args`, while OrchestratorBot/TaskerBot do. Scoring on
-names keeps the comparison fair across all three agents.
+records don't include call `args`, while OrchestratorBot does. Scoring on
+names keeps the comparison fair across both agents.

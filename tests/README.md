@@ -47,7 +47,6 @@ tests/
 │   │   └── test_synthesizer.py       # DynamicToolSynthesizer
 │   ├── agents/
 │   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow
-│   │   ├── test_tasker.py            # TaskerBot construction / get_response / limits
 │   │   └── orchestrator/
 │   │       ├── test_contract.py      # Interface contract (IBot / IConversationBot / IOrchestratorBot)
 │   │       ├── test_graph.py         # agent/tools graph, partial-response filtering

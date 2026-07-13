@@ -2,7 +2,7 @@
 
 `OrchestratorBot` es el motor de orquestación de alto rendimiento de `sonika-ai-toolkit`. Está diseñado para ejecutar tareas complejas de manera autónoma utilizando un patrón **ReAct (Fast Edition)** sobre **LangGraph**, con soporte nativo para interrupciones humanas y memoria persistente.
 
-A diferencia del `TaskerBot` (que es más estructurado y granular), el `OrchestratorBot` está optimizado para la **velocidad y la autonomía**, permitiendo que el modelo razone y actúe en un bucle más fluido.
+Está optimizado para la **velocidad y la autonomía**, permitiendo que el modelo razone y actúe en un bucle fluido.
 
 ---
 

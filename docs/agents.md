@@ -1,13 +1,12 @@
 # Agents
 
-Sonika AI Toolkit provides three agent architectures for different use cases. All agents return `BotResponse` — a `dict` subclass with typed property accessors.
+Sonika AI Toolkit provides two agent architectures for different use cases. All agents return `BotResponse` — a `dict` subclass with typed property accessors.
 
 ## Overview
 
 | Agent | Interface | Use Case |
 |-------|-----------|----------|
 | **ReactBot** | `IConversationBot` | Single-turn conversation + tools |
-| **TaskerBot** | `IConversationBot` | Multi-step planner-executor |
 | **OrchestratorBot** | `IOrchestratorBot` | Autonomous goal-driven agent |
 
 ## ReactBot
@@ -25,19 +24,6 @@ bot = ReactBot(llm, instructions="You are a helpful assistant", tools=[])
 messages = [Message(content="My name is Erley", is_bot=False)]
 response = bot.get_response("What is my name?", messages, logs=[])
 print(response.content)
-```
-
-## TaskerBot
-
-Planner → Executor → Validator → Output → Logger graph for complex multi-step tasks.
-
-```python
-from sonika_ai_toolkit.agents.tasker import TaskerBot
-
-bot = TaskerBot(llm, instructions="You are a project manager", tools=[])
-response = bot.get_response("Create a plan for launching a product", [], logs=[])
-print(response.content)
-print(response.plan)
 ```
 
 ## OrchestratorBot
@@ -178,15 +164,6 @@ Multiple nodes at the same position chain in list order. Node names must not
 collide with the built-ins (`agent`, `tools`); their state updates stream as
 `("updates", {"<name>": {...}})`.
 
-**TaskerBot** supports a different mechanism — *node overrides*. The topology
-(planner → executor → validator → output → logger) stays fixed, but each node
-implementation can be swapped with any callable honoring that node's state
-contract:
-
-```python
-bot = TaskerBot(..., planner_node=my_planner, output_node=my_output)
-```
-
 ## BotResponse
 
 All agents return `BotResponse`, a `dict` subclass with typed properties:
@@ -308,7 +285,7 @@ for both agents.
 
 ```
 IBot (ABC)
-├── IConversationBot    — ReactBot, TaskerBot
+├── IConversationBot    — ReactBot
 │     get_response(user_input, messages, logs) → BotResponse
 └── IOrchestratorBot    — OrchestratorBot
       astream_events(goal, mode, thread_id) → AsyncGenerator

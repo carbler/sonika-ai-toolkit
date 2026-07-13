@@ -15,9 +15,7 @@ The goal is to provide a standardized, scalable framework for banking and custom
 
 ## 🤖 Bot Architectures
 
-The project features two primary bot implementations:
-
-### 1. `ReactBot` (Standard Agent)
+### `ReactBot` (Standard Agent)
 *   **Path**: `src/sonika_ai_toolkit/agents/react.py`
 *   **Architecture**: Uses `LangGraph` state graph (`agent` -> `tools` -> `agent`).
 *   **Key Components**:
@@ -25,15 +23,6 @@ The project features two primary bot implementations:
     *   `_InternalToolLogger`: Custom callback handler for tool execution tracking.
     *   `ILanguageModel`: Unified interface for model switching.
 *   **Features**: Streaming response, native tool calling, robust error handling, and token usage tracking.
-
-### 2. `TaskerBot` (Advanced Planner)
-*   **Path**: `src/sonika_ai_toolkit/agents/tasker/`
-*   **Architecture**: Enhanced ReAct pattern with explicit `Planner`, `Executor`, and `Validator` nodes.
-*   **Workflow**:
-    1.  **Planner**: Breaks down user request into sub-tasks.
-    2.  **Executor**: Executes the current sub-task using available tools.
-    3.  **Validator**: Checks if the task is complete or needs more steps.
-*   **Features**: Iterative problem solving with recursion limits and separation of concerns.
 
 ---
 
@@ -127,7 +116,6 @@ This project implements a unified `ILanguageModel` interface in `src/sonika_ai_t
 *   `src/sonika_ai_toolkit/`: Core library code.
     *   `agents/`: Bot implementations.
         *   `react.py`: Main `ReactBot` implementation.
-        *   `tasker/`: `TaskerBot` implementation.
     *   `classifiers/`: Text classification tools.
     *   `document_processing/`: PDF and document tools.
     *   `tools/`: Tool definitions.

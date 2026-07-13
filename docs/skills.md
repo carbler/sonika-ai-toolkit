@@ -2,8 +2,8 @@
 
 Skills are **folder-based capability packs** that teach agents new abilities:
 markdown instructions that get injected into the system prompt, plus optional
-tools that get merged into the agent's tool list. All three agents support
-them: **ReactBot**, **TaskerBot**, and **OrchestratorBot**.
+tools that get merged into the agent's tool list. Both agents support them:
+**ReactBot** and **OrchestratorBot**.
 
 ## Folder Layout
 
@@ -92,9 +92,6 @@ bot = ReactBot(
     skills=[skill, programmatic],
 )
 ```
-
-TaskerBot works the same way (`skills=` / `skills_dir=`); the instructions are
-appended to the planner's system prompt.
 
 ## Semantics
 

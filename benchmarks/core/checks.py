@@ -3,7 +3,7 @@
 Each factory returns a Check: a pure function that inspects a BotResponse and
 returns a CheckOutcome. Checks rely only on fields every agent exposes —
 `content` (str) and `tools_executed` (list of {tool_name, ...}) — so the same
-scenario scores identically across ReactBot, TaskerBot and OrchestratorBot.
+scenario scores identically across ReactBot and OrchestratorBot.
 """
 
 import re
