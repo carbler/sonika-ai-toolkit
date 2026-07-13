@@ -20,6 +20,12 @@ from sonika_ai_toolkit.utilities.questions import (
     questions_summary,
 )
 from sonika_ai_toolkit.agents.base import IConversationBot
+from sonika_ai_toolkit.skills import (
+    Skill,
+    merge_skill_tools,
+    render_skills_prompt,
+    resolve_skills,
+)
 
 
 # ============= MODULE-LEVEL HELPERS =============
@@ -286,6 +292,8 @@ class ReactBot(IConversationBot):
         on_tool_error: Optional[Callable[[str, str], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
         enable_user_questions: bool = False,
+        skills: Optional[List[Skill]] = None,
+        skills_dir: Optional[str] = None,
     ):
         """
         Initialize the ReactBot with optional MCP, thinking, and callback support.
@@ -310,6 +318,11 @@ class ReactBot(IConversationBot):
                 the model can ask structured questions. The turn ends and the result
                 carries `questions` + `needs_input=True`; feed the answers back on the
                 next `get_response` call.
+            skills (List[Skill], optional): Capability packs whose instructions are
+                appended to the system prompt and whose tools are merged into the
+                tool list (explicitly-passed tools win on name collision).
+            skills_dir (str, optional): Directory of folder-based skills
+                (subfolders with SKILL.md + optional tools.py); combined with `skills`.
         """
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -330,8 +343,16 @@ class ReactBot(IConversationBot):
         self.chat_history: List[BaseMessage] = []
         self._current_logs: List[str] = []
 
-        self.tools = tools or []
+        # Copy so skill/MCP/ask_user tools never mutate the caller's list.
+        self.tools = list(tools) if tools else []
         self.mcp_client = None
+
+        # Folder/programmatic skills: instructions appended to the system prompt,
+        # tools merged into the tool list before binding.
+        self.skills = resolve_skills(skills, skills_dir)
+        self._skills_prompt = render_skills_prompt(self.skills)
+        if self.skills:
+            self.tools = merge_skill_tools(self.tools, self.skills)
 
         self.on_tool_start = on_tool_start
         self.on_tool_end = on_tool_end
@@ -381,6 +402,8 @@ class ReactBot(IConversationBot):
 
     def _build_system_prompt(self, include_fallback_think: bool) -> str:
         system_content = self.instructions
+        if self._skills_prompt:
+            system_content += "\n\n" + self._skills_prompt
         if self.tools:
             tool_names = ", ".join(tool.name for tool in self.tools)
             system_content += (

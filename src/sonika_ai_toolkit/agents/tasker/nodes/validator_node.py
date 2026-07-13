@@ -60,7 +60,7 @@ Verify this work now."""
 
         try:
             response = self.model.invoke(messages, config={"temperature": 0.0})
-            content = response.content.strip()
+            content = self._text_content(response.content)
 
             # Simple parsing of structured output (could be improved with structured output parser)
             status = "approved"
@@ -86,13 +86,18 @@ Verify this work now."""
 
             log_update = self._add_log(state, log_msg)
 
-            return {
+            result = {
                 "validator_output": {
                     "status": status,
                     "feedback": feedback
                 },
                 **log_update
             }
+            # Count rejections so the router can bound the replan loop (a validator
+            # that keeps rejecting must not spin the graph up to the recursion limit).
+            if status == "rejected":
+                result["planning_attempts"] = state.get("planning_attempts", 0) + 1
+            return result
 
         except Exception as e:
             self.logger.error(f"Validator failed: {e}")

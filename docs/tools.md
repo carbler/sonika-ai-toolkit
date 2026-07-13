@@ -42,6 +42,17 @@ Sonika AI Toolkit includes 18 built-in tools and supports custom tool creation v
 | `EmailTool` | Send emails (simplified) |
 | `SaveContacto` | Save contact information |
 
+### Signal Tools (internal)
+
+These tools perform no action — the agents intercept their calls and react to
+them. You never register them yourself:
+
+| Tool | Registered by | Purpose |
+|------|---------------|---------|
+| `ask_user` | `enable_user_questions=True` | Structured questions to the caller (interrupt / `BotResponse.questions`) |
+| `set_plan` | `enable_planning=True` (OrchestratorBot) | Announce the structured execution plan |
+| `update_step` | `enable_planning=True` (OrchestratorBot) | Report per-step progress (`running`/`done`/`skipped`/`error`) |
+
 ## Using Tools with Agents
 
 ```python

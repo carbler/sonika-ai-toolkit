@@ -49,6 +49,19 @@ class QuestionEvent(TypedDict, total=False):
     reason: Optional[str]
 
 
+class PlanStep(TypedDict):
+    """One step of the structured plan registered via the ``set_plan`` tool."""
+    step: int          # 1-based index
+    description: str
+    status: Literal["pending", "running", "done", "skipped", "error"]
+
+
+class StepEvent(TypedDict):
+    """A progress transition for one plan step (``update_step`` tool)."""
+    step: int
+    status: Literal["running", "done", "skipped", "error"]
+
+
 class ToolRecord(TypedDict):
     """A record of a single tool execution captured by the tools node."""
     tool_name: str
@@ -64,6 +77,8 @@ class AgentUpdate(TypedDict, total=False):
     partial_response: Optional[str]  # intermediate text when agent continues working
     thinking: str
     status_events: List[StatusEvent]  # rate-limit retries, warnings, …
+    plan: List[PlanStep]              # plan snapshot (enable_planning=True only)
+    step_events: List[StepEvent]      # step progress deltas of this turn
 
 
 class ToolsUpdate(TypedDict, total=False):

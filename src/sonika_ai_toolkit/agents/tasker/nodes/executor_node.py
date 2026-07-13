@@ -81,7 +81,6 @@ class ExecutorNode(BaseNode):
                 continue
 
             # --- 3. EJECUCIÓN REAL ---
-            success = False
             for attempt in range(self.max_retries + 1):
                 try:
                     result = await self._execute_tool(tool_name, params)

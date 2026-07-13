@@ -17,7 +17,15 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     QuestionEvent,
     QuestionItem,
     QuestionOptionEvent,
+    PlanStep,
+    StepEvent,
 )
+
+# Skills (folder-based capability packs)
+from sonika_ai_toolkit.skills import Skill, load_skills
+
+# Custom graph nodes
+from sonika_ai_toolkit.agents.extensions import CustomNode
 
 # Response type
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
@@ -90,6 +98,13 @@ __all__ = [
     "QuestionEvent",
     "QuestionItem",
     "QuestionOptionEvent",
+    "PlanStep",
+    "StepEvent",
+    # Skills
+    "Skill",
+    "load_skills",
+    # Custom graph nodes
+    "CustomNode",
     # Types
     "BotResponse",
     "ILanguageModel",

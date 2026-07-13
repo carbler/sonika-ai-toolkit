@@ -22,6 +22,7 @@ nav:
   - Classifiers: classifiers.md
   - Models: models.md
   - Tools: tools.md
+  - Skills: skills.md
   - Interfaces: interfaces.md
 
 markdown_extensions:

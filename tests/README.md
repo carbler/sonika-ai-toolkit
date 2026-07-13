@@ -1,282 +1,100 @@
 # Test Suite for sonika-ai-toolkit
 
-Comprehensive, CI-ready test suite for the sonika-ai-toolkit library. All external dependencies (LLMs, HTTP, filesystem) are mocked to ensure fast, deterministic, and isolated tests.
+CI-ready test suite. Every external dependency (LLM SDKs, HTTP, SMTP, DB drivers)
+is mocked, so `unit` and `integration` tests are fast, deterministic, and need no
+API keys. Only `e2e` tests hit real providers.
 
 ## Quick Start
 
-### Run All Tests
 ```bash
-pytest
-```
+# Unit + integration (no keys, ~5s)
+pytest tests/unit tests/integration -q
 
-### Run Tests by Category
-```bash
-# Unit tests only (fast, ~10-20s)
+# By category (markers are applied automatically by directory)
 pytest -m unit
-
-# Integration tests only
 pytest -m integration
+pytest -m e2e            # real API keys required (see e2e/conftest.py)
 
-# Specific test file
-pytest tests/unit/test_models.py
+# A single module / class / test
+pytest tests/unit/utilities/test_models.py
+pytest tests/unit/utilities/test_models.py::TestOpenAILanguageModel
+pytest tests/unit/tools/test_registry.py::TestToolDescriptions::test_empty_registry
 
-# Specific test class
-pytest tests/unit/test_models.py::TestOpenAILanguageModel
-
-# Specific test
-pytest tests/unit/test_models.py::TestOpenAILanguageModel::test_init_default_model_name
+# Lint
+ruff check tests/unit tests/integration
 ```
 
-### Run with Coverage
-```bash
-pytest --cov=src/sonika_ai_toolkit --cov-report=html
-open htmlcov/index.html  # macOS
-```
+## Structure
 
-### Run in Watch Mode
-```bash
-pytest-watch
-```
-
-## Test Structure
+`tests/unit/` mirrors `src/sonika_ai_toolkit/` 1:1 — one test file per module.
 
 ```
 tests/
-├── conftest.py                    # Shared fixtures and utilities
+├── conftest.py                       # Shared fixtures + auto-marking hook
 ├── unit/
-│   ├── test_models.py            # Language model initialization (52 tests)
-│   ├── test_types.py             # Type definitions and interfaces (14 tests)
-│   ├── test_think_helpers.py     # ThinkBot helpers and extraction (24 tests)
-│   ├── test_react_logger.py      # Tool logger callback handling (19 tests)
-│   ├── test_classifiers.py       # TextClassifier with structured output (8 tests)
-│   └── test_tools.py             # Tool definitions (14 tests)
+│   ├── utilities/
+│   │   ├── test_models.py            # OpenAI / DeepSeek / Gemini / Bedrock / Anthropic wrappers
+│   │   ├── test_types.py             # BotResponse, ILanguageModel, Message, ResponseModel
+│   │   └── test_questions.py         # ask_user contract (schema / payload / summary)
+│   ├── classifiers/
+│   │   └── test_classifiers.py       # Text / Intent / Sentiment / Safety / Image
+│   ├── tools/
+│   │   ├── test_core_tools.py        # bash, files, http, python, search, web, datetime, email
+│   │   ├── test_database_tools.py    # SQLite, PostgreSQL, MySQL, Redis
+│   │   ├── test_integrations.py      # EmailTool, SaveContacto
+│   │   ├── test_ask_user.py          # AskUserQuestionTool
+│   │   ├── test_registry.py          # ToolRegistry
+│   │   └── test_synthesizer.py       # DynamicToolSynthesizer
+│   ├── agents/
+│   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow
+│   │   ├── test_tasker.py            # TaskerBot construction / get_response / limits
+│   │   └── orchestrator/
+│   │       ├── test_contract.py      # Interface contract (IBot / IConversationBot / IOrchestratorBot)
+│   │       ├── test_graph.py         # agent/tools graph, partial-response filtering
+│   │       ├── test_risk.py          # risk-gate helpers (should_auto_approve, format_approval_prompt)
+│   │       └── test_memory.py        # MemoryManager (MEMORY.md / SKILLS.md / sessions)
+│   └── document_processing/
+│       └── test_processor.py         # DocumentProcessor (count_tokens, extract, chunks)
 ├── integration/
-│   ├── test_reactbot_flow.py     # ReactBot end-to-end workflow (15 tests)
-│   └── test_thinkbot_flow.py     # ThinkBot end-to-end workflow (18 tests)
-├── fixtures/                      # Custom test fixtures (if needed)
-├── pytest.ini                      # Pytest configuration
-└── README.md                       # This file
+│   └── test_reactbot_flow.py         # ReactBot end-to-end (mocked LLM)
+├── e2e/                              # Real API calls — skipped when keys are missing
+│   ├── conftest.py                   # ← model configuration lives here
+│   ├── test_reactbot.py
+│   ├── test_orchestratorbot.py
+│   └── test_classifiers.py
+└── ultimate/                        # Standalone stress runners (not pytest)
 ```
 
-## Test Coverage by Component
+## Markers
 
-### Unit Tests (131 tests)
+Markers are **not** declared per-file. `tests/conftest.py` has a
+`pytest_collection_modifyitems` hook that marks every test by its location:
+`unit/` → `unit`, `integration/` → `integration`, `e2e/` → `e2e`. Adding a new
+test under the right directory is all that's needed for `pytest -m <marker>` to
+pick it up.
 
-| Module | Coverage | Tests |
-|--------|----------|-------|
-| `sonika_ai_toolkit.utilities.models` | 100% | 24 tests |
-| `sonika_ai_toolkit.utilities.types` | 100% | 8 tests |
-| `sonika_ai_toolkit.agents.think` | 100% | 24 tests |
-| `sonika_ai_toolkit.agents.react` | 100% | 19 tests |
-| `sonika_ai_toolkit.classifiers.text` | 100% | 8 tests |
-| `sonika_ai_toolkit.tools.integrations` | 100% | 14 tests |
+## Shared fixtures (`conftest.py`)
 
-### Integration Tests (33 tests)
+- `mock_raw_model` — MagicMock mimicking a LangChain ChatModel (`bind_tools`,
+  `with_structured_output`, `invoke`, `stream` preconfigured)
+- `mock_language_model` — `ILanguageModel` wrapping `mock_raw_model`
+- `email_tool`, `save_contact_tool`, `all_tools` — tool fixtures
+- `sample_messages`, `empty_messages`, `sample_logs`, `empty_logs`
+- `sentiment_model`, `language_model_class` — Pydantic schemas for classifier tests
 
-| Module | Tests |
-|--------|-------|
-| ReactBot workflow | 15 tests |
-| ThinkBot workflow | 18 tests |
+Real I/O in unit tests is confined to pytest's `tmp_path`.
 
-## Key Features
+## Conventions
 
-### ✅ No Real API Calls
-All LLM SDKs (OpenAI, DeepSeek, Google Generative AI, Bedrock) are patched with `unittest.mock`. Tests run without API keys.
-
-### ✅ Deterministic Results
-Mocks return pre-configured responses. No network I/O means tests are fast and reproducible.
-
-### ✅ Fixture-Based Design
-`conftest.py` provides reusable fixtures:
-- `mock_language_model`: Basic mock ILanguageModel
-- `mock_thinking_language_model`: Mock with thinking support
-- `email_tool`, `save_contact_tool`: Tool fixtures
-- `sentiment_model`, `language_model_class`: Pydantic models for classifier tests
-
-### ✅ Comprehensive Coverage
-- **Type system**: Message, ResponseModel, abstract interfaces (ILanguageModel, IEmbeddings, FileProcessorInterface)
-- **Language models**: OpenAI, DeepSeek, Gemini, Bedrock initialization and parameter passing
-- **Thinking extraction**: Gemini list format, DeepSeek reasoning_content, fallback <think> tags
-- **Tool execution**: Tool logging, callback execution, error handling
-- **Text classification**: Structured output, token counting, validation
-- **Bot workflows**: Full agent-loop with tools, streaming, token tracking
-
-## Test Markers
-
-Tests use pytest markers for filtering:
-
-```bash
-pytest -m unit        # Run only unit tests
-pytest -m integration # Run only integration tests
-pytest -m slow        # Run only slow tests
-```
-
-Defined in `pytest.ini`:
-- `unit`: Fast, isolated tests (no I/O)
-- `integration`: Multi-component tests (still fully mocked)
-- `slow`: Tests that take longer to run
-
-## Configuration
-
-### pytest.ini
-```ini
-[pytest]
-testpaths = tests
-python_files = test_*.py
-python_classes = Test*
-python_functions = test_*
-addopts = -v --tb=short --strict-markers --no-header
-markers =
-    unit: Unit tests (fast, isolated, no I/O)
-    integration: Integration tests (component interaction, still mocked)
-    slow: Tests that take longer to run
-filterwarnings =
-    ignore::DeprecationWarning
-    ignore::PendingDeprecationWarning
-    ignore::UserWarning
-```
-
-## Writing New Tests
-
-### Basic Test Template
-```python
-import pytest
-from unittest.mock import MagicMock
-
-class TestMyComponent:
-    def test_something(self, mock_language_model):
-        """Test description."""
-        # Arrange
-        component = MyComponent(mock_language_model)
-
-        # Act
-        result = component.do_something()
-
-        # Assert
-        assert result == expected_value
-```
-
-### Using Fixtures
-```python
-def test_with_fixture(self, mock_language_model, email_tool, sentiment_model):
-    """Use multiple fixtures in one test."""
-    pass
-```
-
-### Parametrized Tests
-```python
-@pytest.mark.parametrize("model_name,expected", [
-    ("gpt-4o-mini", False),
-    ("deepseek-reasoner", True),
-])
-def test_supports_thinking(self, model_name, expected):
-    """Test with multiple inputs."""
-    assert detect_thinking(model_name) == expected
-```
-
-## Mocking Patterns
-
-### Patch External SDK Classes
-```python
-with patch("sonika_ai_toolkit.utilities.models.ChatOpenAI", autospec=True) as MockChat:
-    model = OpenAILanguageModel(api_key="key")
-    MockChat.assert_called_once()
-```
-
-### Mock Tool Callbacks
-```python
-on_start = MagicMock()
-logger = _InternalToolLogger(on_start=on_start)
-logger.on_tool_start({"name": "my_tool"}, "input")
-on_start.assert_called_once_with("my_tool", "input")
-```
-
-### Mock LLM Response with Metadata
-```python
-msg = AIMessage(content="answer")
-msg.usage_metadata = {"input_tokens": 50, "output_tokens": 30}
-mock_model.invoke.return_value = msg
-```
-
-## Common Issues & Solutions
-
-### "ModuleNotFoundError: No module named 'sonika_ai_toolkit'"
-Install in development mode:
-```bash
-pip install -e .
-```
-
-### "ImportError: cannot import name 'X' from sonika_ai_toolkit"
-Ensure the module exists and `__init__.py` files are in place:
-```bash
-find src -name "__init__.py" | head -10
-```
-
-### Test Hangs / Timeout
-Check if any test is making real network calls:
-- Verify all LLM SDKs are patched in `conftest.py`
-- Check for uncaught asyncio calls (use `asyncio.run()` in tests)
-
-### Assertion Fails Due to Mock Call Args
-Print the actual call to debug:
-```python
-print(MockChat.call_args)  # Prints ((args), {kwargs})
-_, kwargs = MockChat.call_args
-```
-
-## Performance
-
-Typical test suite execution times:
-- Unit tests: ~20-30 seconds (no I/O)
-- Integration tests: ~10-15 seconds (still mocked)
-- Full suite with coverage: ~40-50 seconds
-
-Run time depends on your machine and pytest-xdist parallelization.
-
-## CI/CD Integration
-
-### GitHub Actions Example
-```yaml
-name: Tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - run: pip install -e ".[dev]"
-      - run: pytest --cov=src/sonika_ai_toolkit
-```
-
-## Best Practices
-
-1. **Mock at SDK boundaries**: Patch LangChain/OpenAI imports, not your code
-2. **Use fixtures for reusable setup**: Avoid duplicating mock creation
-3. **Test behavior, not implementation**: Assert on outcomes, not mock call counts (unless verifying integration)
-4. **Keep tests focused**: One assertion or one clear behavior per test
-5. **Use descriptive names**: `test_extract_thinking_from_gemini_list_content` > `test_extract`
-6. **Parametrize similar cases**: Use `@pytest.mark.parametrize` for multiple inputs
-7. **Isolate side effects**: Reset mock call counts if testing sequential calls
-
-## Extending the Test Suite
-
-### Adding a New Module Test
-1. Create `tests/unit/test_new_module.py`
-2. Import fixtures from `conftest.py`
-3. Use mocking patterns from existing tests
-4. Run: `pytest tests/unit/test_new_module.py -v`
-
-### Adding a New Integration Test
-1. Create `tests/integration/test_new_flow.py`
-2. Use mocked language models (don't hit real APIs)
-3. Test full workflow with multiple components
-4. Mark with `@pytest.mark.integration`
+1. **One test file per source module**, mirroring the `src/` path.
+2. **Mock at SDK boundaries** — patch `sonika_ai_toolkit.utilities.models.ChatOpenAI`
+   (imports are module-level for exactly this reason), driver modules via
+   `patch.dict("sys.modules", ...)`, and network via `patch("requests.get", ...)`.
+3. **Behavior over implementation** — assert on outcomes; verify mock call args
+   only when the call itself is the contract (e.g. `starttls`, `sendmail`).
+4. **Descriptive names** — `test_set_with_ttl_uses_setex` over `test_set2`.
+5. **Parametrize** similar cases with `@pytest.mark.parametrize`.
 
 ## References
 
-- [pytest documentation](https://docs.pytest.org/)
-- [unittest.mock](https://docs.python.org/3/library/unittest.mock.html)
-- [LangChain testing](https://python.langchain.com/docs/modules/agents/tools/testing_tools/)
+- [pytest](https://docs.pytest.org/) · [unittest.mock](https://docs.python.org/3/library/unittest.mock.html)

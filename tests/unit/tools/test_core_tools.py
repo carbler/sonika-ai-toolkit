@@ -7,10 +7,7 @@ Covers: RunBashTool, BashSafeTool, ReadFileTool, WriteFileTool,
         GetDateTimeTool, EmailSMTPTool.
 """
 
-import json
 import os
-import tempfile
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -218,8 +215,8 @@ class TestListDirTool:
         for name in ["zzz.txt", "aaa.txt", "mmm.txt"]:
             (tmp_path / name).write_text("")
         result = ListDirTool()._run(str(tmp_path))
-        lines = [l for l in result.splitlines() if l.strip()]
-        names = [l.split()[-1] for l in lines]
+        lines = [ln for ln in result.splitlines() if ln.strip()]
+        names = [ln.split()[-1] for ln in lines]
         assert names == sorted(names)
 
 
@@ -475,6 +472,18 @@ class TestFetchWebPageTool:
         with patch("requests.get", return_value=self._resp("   ")):
             result = FetchWebPageTool()._run("http://x.com")
         assert isinstance(result, str)
+
+    def test_missing_requests_reports_not_installed(self):
+        real_import = __import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "requests":
+                raise ImportError("No module named 'requests'")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            result = FetchWebPageTool()._run("http://example.com")
+        assert "not installed" in result
 
 
 # ---------------------------------------------------------------------------

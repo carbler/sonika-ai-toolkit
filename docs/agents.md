@@ -111,6 +111,82 @@ asyncio.run(main())
 | `bot.set_resume_command(data)` | Resume after an interrupt |
 | `await bot.a_prewarm()` | Pre-warm TCP/TLS connection |
 
+### Structured Plan & Step Progress (`enable_planning`)
+
+With `enable_planning=True` the orchestrator registers two internal *signal*
+tools (`set_plan`, `update_step`) and instructs the model to announce a plan
+before working and report per-step progress. The calls perform no real action
+(they get a no-op acknowledgment and never appear in `tools_executed`); the
+plan and its progress surface through the `"updates"` stream:
+
+```python
+bot = OrchestratorBot(..., enable_planning=True)
+
+async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
+    if stream_mode == "updates":
+        for node, update in payload.items():
+            if node == "agent":
+                if update.get("plan"):
+                    for s in update["plan"]:
+                        print(f'{s["step"]}. [{s["status"]}] {s["description"]}')
+                for ev in update.get("step_events", []):
+                    print(f'Paso {ev["step"]} → {ev["status"]}')
+```
+
+Stream shape:
+
+```python
+("updates", {"agent": {"plan": [
+    {"step": 1, "description": "Buscar datos", "status": "pending"},
+    {"step": 2, "description": "Generar reporte", "status": "pending"},
+]}})
+("updates", {"agent": {"step_events": [{"step": 1, "status": "running"}]}})
+("updates", {"tools": {...}})
+("updates", {"agent": {"step_events": [{"step": 1, "status": "done"}]}})
+```
+
+Non-streaming callers get the final snapshot in `result.plan` (from
+`run`/`arun`), with each step's final status. The feature is **opt-in**: with
+the default `enable_planning=False` nothing changes — no extra tools, no new
+stream keys, and `result.plan` stays `[]`. The text-only `mode="plan"` is
+unaffected.
+
+### Custom Nodes (`custom_nodes`)
+
+Inject your own LangGraph nodes into the orchestrator graph without forking:
+
+```python
+from sonika_ai_toolkit import CustomNode
+
+def audit(state):  # sync or async; receives OrchestratorState
+    return {"session_log": [f"goal: {state.get('goal')}"]}  # partial state update
+
+bot = OrchestratorBot(..., custom_nodes=[
+    CustomNode(name="audit", node=audit, position="start"),
+])
+```
+
+Positions:
+
+| Position | Where it runs |
+|----------|---------------|
+| `"start"` | Between the entry point and the agent (once per run) |
+| `"after_tools"` | On the tools → agent edge (every tool loop) |
+| `"end"` | After the agent's final turn, before END (once per run) |
+
+Multiple nodes at the same position chain in list order. Node names must not
+collide with the built-ins (`agent`, `tools`); their state updates stream as
+`("updates", {"<name>": {...}})`.
+
+**TaskerBot** supports a different mechanism — *node overrides*. The topology
+(planner → executor → validator → output → logger) stays fixed, but each node
+implementation can be swapped with any callable honoring that node's state
+contract:
+
+```python
+bot = TaskerBot(..., planner_node=my_planner, output_node=my_output)
+```
+
 ## BotResponse
 
 All agents return `BotResponse`, a `dict` subclass with typed properties:

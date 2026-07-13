@@ -83,7 +83,7 @@ Generate your response now:"""
         response = self.model.invoke(messages, config={"temperature": 0.3})
 
         if hasattr(response, 'content'):
-            return response.content.strip()
+            return self._text_content(response.content)
         return str(response).strip()
 
     def _build_results_summary(self, tools_executed: List[Dict[str, Any]]) -> str:

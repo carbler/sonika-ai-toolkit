@@ -7,7 +7,7 @@ or HTTP requests are needed.
 
 import os
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage
 
 from sonika_ai_toolkit.utilities.models import (
@@ -17,6 +17,9 @@ from sonika_ai_toolkit.utilities.models import (
     BedrockLanguageModel,
     AnthropicLanguageModel,
     _DeepSeekReasonerChatModel,
+    _openai_omits_temperature,
+    _anthropic_omits_temperature,
+    _temperature_kwargs,
 )
 
 
@@ -159,7 +162,7 @@ class TestGeminiLanguageModel:
         import logging
         with _patch_gemini() as MockGemini:
             with caplog.at_level(logging.WARNING):
-                lm = GeminiLanguageModel(
+                GeminiLanguageModel(
                     api_key="key",
                     model_name="gemini-2.5-flash",
                     temperature=0.5,
@@ -390,12 +393,6 @@ class TestAnthropicLanguageModel:
 # ---------------------------------------------------------------------------
 # Temperature compatibility (fixed-temperature model families + None)
 # ---------------------------------------------------------------------------
-
-from sonika_ai_toolkit.utilities.models import (
-    _openai_omits_temperature,
-    _anthropic_omits_temperature,
-    _temperature_kwargs,
-)
 
 
 class TestTemperatureHelpers:

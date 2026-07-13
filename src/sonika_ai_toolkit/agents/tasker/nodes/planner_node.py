@@ -17,6 +17,7 @@ class PlannerNode(BaseNode):
         tools: List[Any],
         max_iterations: int = 10,
         on_planner_update: Optional[Callable] = None,
+        extra_instructions: str = "",
         logger=None
     ):
         super().__init__(logger)
@@ -24,6 +25,8 @@ class PlannerNode(BaseNode):
         self.tools = tools
         self.max_iterations = max_iterations
         self.on_planner_update = on_planner_update
+        # Extra blocks appended to the system prompt (e.g. skills instructions).
+        self.extra_instructions = extra_instructions
 
         # Load prompts
         self.base_path = os.path.dirname(os.path.dirname(__file__))
@@ -59,6 +62,8 @@ class PlannerNode(BaseNode):
             limitations=limitations,
             conditional_rules="" # Removed domain_rules usage
         )
+        if self.extra_instructions:
+            system_prompt += "\n\n" + self.extra_instructions
 
         # Build Analysis Input
         observation = self._get_last_observation(state)
@@ -68,12 +73,16 @@ class PlannerNode(BaseNode):
         custom_messages = state.get('messages', [])
         conversation_messages = self._convert_messages_to_langchain(custom_messages)
 
-        # Assemble Messages
-        messages = [
-            SystemMessage(content=system_prompt),
-            *conversation_messages,
-            HumanMessage(content=analysis_input)
-        ]
+        # Assemble Messages. The user request is anchored as the FIRST turn so that
+        # any tool-call AIMessage in the history is preceded by a user turn — Gemini
+        # rejects a "function call turn" that doesn't come right after a user turn
+        # ("Invalid argument provided to Gemini"), which otherwise loops the graph.
+        user_input = state.get('user_input', '')
+        messages = [SystemMessage(content=system_prompt)]
+        if user_input:
+            messages.append(HumanMessage(content=user_input))
+        messages.extend(conversation_messages)
+        messages.append(HumanMessage(content=analysis_input))
 
         # Invoke Model
         try:
@@ -100,8 +109,15 @@ class PlannerNode(BaseNode):
         # If the model decided to call a tool, we MUST save the AIMessage to the state history
         # so that the next iteration sees the tool_call.
         if decision["decision"] == "execute_tool":
-            # Append the response (AIMessage with tool_calls) to 'messages'
-            updates["messages"] = [response]
+            # Store a normalized copy: thinking models (e.g. Gemini 2.5) return
+            # content as a list of blocks, and re-feeding that raw list back on the
+            # next turn makes Gemini reject its own history ("Invalid argument").
+            # Flatten to a string while preserving the tool calls so the history
+            # stays valid for every provider.
+            updates["messages"] = [AIMessage(
+                content=self._text_content(response.content),
+                tool_calls=response.tool_calls,
+            )]
 
         # Callback
         if self.on_planner_update:
@@ -208,7 +224,7 @@ Analyze the situation and decide:
         """Extrae la decisión del AIMessage."""
         decision = {
             "decision": "finish",
-            "reasoning": response.content.strip() if response.content else "",
+            "reasoning": self._text_content(response.content),
             "tool_calls": [] # Lista de llamadas
         }
 

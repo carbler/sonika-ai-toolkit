@@ -5,15 +5,33 @@ All external dependencies (LLMs, HTTP, filesystem) are mocked here so tests
 are fast, deterministic, and CI-safe.
 """
 
+import os
 import pytest
-from typing import List, Optional
-from unittest.mock import MagicMock, patch
+from typing import List
+from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
 from pydantic import BaseModel, Field
 
 from sonika_ai_toolkit.utilities.types import ILanguageModel, Message
 from sonika_ai_toolkit.tools.integrations import EmailTool, SaveContacto
+
+
+# ---------------------------------------------------------------------------
+# Auto-mark tests by directory so `pytest -m unit|integration|e2e` works
+# without every file declaring pytestmark. Location is the single source of
+# truth: tests/unit/** -> unit, tests/integration/** -> integration, etc.
+# ---------------------------------------------------------------------------
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        path = str(item.fspath)
+        if f"{os.sep}unit{os.sep}" in path:
+            item.add_marker(pytest.mark.unit)
+        elif f"{os.sep}integration{os.sep}" in path:
+            item.add_marker(pytest.mark.integration)
+        elif f"{os.sep}e2e{os.sep}" in path:
+            item.add_marker(pytest.mark.e2e)
 
 
 # ---------------------------------------------------------------------------
@@ -60,15 +78,6 @@ def mock_raw_model() -> MagicMock:
 def mock_language_model(mock_raw_model: MagicMock) -> _MockLanguageModel:
     """ILanguageModel wrapping mock_raw_model; supports_thinking=False."""
     return _MockLanguageModel(mock_raw_model, supports_thinking=False)
-
-
-@pytest.fixture
-def mock_thinking_language_model(mock_raw_model: MagicMock) -> _MockLanguageModel:
-    """ILanguageModel wrapping mock_raw_model; supports_thinking=True (non-reasoner)."""
-    lm = _MockLanguageModel(mock_raw_model, supports_thinking=True)
-    # model_name attribute used by ThinkBot._is_deepseek_reasoner()
-    mock_raw_model.model_name = "gemini-2.5-flash"
-    return lm
 
 
 @pytest.fixture

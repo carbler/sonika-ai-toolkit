@@ -9,6 +9,12 @@ from langgraph.graph import StateGraph, END
 from langchain_community.callbacks.manager import get_openai_callback
 
 from sonika_ai_toolkit.utilities.types import BotResponse
+from sonika_ai_toolkit.skills import (
+    Skill,
+    merge_skill_tools,
+    render_skills_prompt,
+    resolve_skills,
+)
 from sonika_ai_toolkit.agents.base import IConversationBot
 from sonika_ai_toolkit.agents.tasker.state import ChatState
 from sonika_ai_toolkit.agents.tasker.nodes.planner_node import PlannerNode
@@ -44,7 +50,14 @@ class TaskerBot(IConversationBot):
         on_tool_end: Optional[Callable[[str, str], None]] = None,
         on_tool_error: Optional[Callable[[str, str], None]] = None,
         on_logs_generated: Optional[Callable[[List[str]], None]] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        skills: Optional[List[Skill]] = None,
+        skills_dir: Optional[str] = None,
+        planner_node: Optional[Callable] = None,
+        executor_node: Optional[Callable] = None,
+        validator_node: Optional[Callable] = None,
+        output_node: Optional[Callable] = None,
+        logger_node: Optional[Callable] = None,
     ):
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
@@ -56,7 +69,25 @@ class TaskerBot(IConversationBot):
         self.personality_tone = personality_tone
         self.limitations = limitations
         self.dynamic_info = dynamic_info
-        self.tools = tools or []
+        # Copy so skill/MCP tools never mutate the caller's list.
+        self.tools = list(tools) if tools else []
+
+        # Folder/programmatic skills: instructions are appended to the planner
+        # system prompt; skill tools are merged into the tool list before the
+        # graph is built (explicitly-passed tools win on name collision).
+        self.skills = resolve_skills(skills, skills_dir)
+        self._skills_prompt = render_skills_prompt(self.skills)
+        if self.skills:
+            self.tools = merge_skill_tools(self.tools, self.skills)
+
+        # Optional node overrides — swap implementations, topology stays fixed.
+        # Each override must honor the ChatState contract of the node it replaces
+        # (e.g. a planner must set `planner_output`).
+        self._planner_node_override = planner_node
+        self._executor_node_override = executor_node
+        self._validator_node_override = validator_node
+        self._output_node_override = output_node
+        self._logger_node_override = logger_node
 
         if mcp_servers:
             self._initialize_mcp(mcp_servers)
@@ -96,16 +127,17 @@ class TaskerBot(IConversationBot):
         """Build the Planner -> Executor -> Output workflow."""
 
         # 1. Planner Node (The Brain)
-        planner = PlannerNode(
+        planner = self._planner_node_override or PlannerNode(
             model=self.model,
             tools=self.tools,
             max_iterations=self.max_iterations,
             on_planner_update=self.on_planner_update,
+            extra_instructions=self._skills_prompt,
             logger=self.logger
         )
 
         # 2. Executor Node (The Hands)
-        executor = ExecutorNode(
+        executor = self._executor_node_override or ExecutorNode(
             tools=self.tools,
             max_retries=self.executor_max_retries,
             on_tool_start=self.on_tool_start,
@@ -115,19 +147,19 @@ class TaskerBot(IConversationBot):
         )
 
         # 3. Output Node (The Voice)
-        output = OutputNode(
+        output = self._output_node_override or OutputNode(
             model=self.model,
             logger=self.logger
         )
 
         # 4. Logger Node (The Recorder)
-        logger_node = LoggerNode(
+        logger_node = self._logger_node_override or LoggerNode(
             on_logs_generated=self.on_logs_generated,
             logger=self.logger
         )
 
         # 5. Validator Node (The Quality Control)
-        validator = ValidatorNode(
+        validator = self._validator_node_override or ValidatorNode(
             model=self.model,
             logger=self.logger
         )
@@ -166,11 +198,16 @@ class TaskerBot(IConversationBot):
         workflow.add_edge("executor", "planner")
 
         # Conditional Edge: Validator -> Output OR Planner (Retry)
+        # Bound the replan loop: after MAX_VALIDATION_RETRIES rejections we emit a
+        # best-effort answer instead of looping the planner up to the recursion limit.
+        MAX_VALIDATION_RETRIES = 2
+
         def route_after_validator(state: ChatState) -> str:
             validator_output = state.get("validator_output", {})
             status = validator_output.get("status", "approved")
+            attempts = state.get("planning_attempts", 0)
 
-            if status == "rejected":
+            if status == "rejected" and attempts < MAX_VALIDATION_RETRIES:
                 return "planner"
             return "output"
 

@@ -10,10 +10,10 @@ Tests the full bot flow with mocked LLM, including:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage, HumanMessage
 
-from sonika_ai_toolkit.agents.react import ReactBot, _InternalToolLogger
+from sonika_ai_toolkit.agents.react import ReactBot
 from sonika_ai_toolkit.utilities.types import Message
 
 

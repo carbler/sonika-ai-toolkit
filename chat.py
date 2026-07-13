@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
 from sonika_ai_toolkit.utilities.models import GeminiLanguageModel
-from sonika_ai_toolkit.tools.registry import ToolRegistry
 from sonika_ai_toolkit.tools.core.bash import RunBashTool
 from sonika_ai_toolkit.tools.core.files import ReadFileTool, ListDirTool
 

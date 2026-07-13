@@ -6,8 +6,9 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional, AsyncGenerator
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage, BaseMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from langchain_community.callbacks.manager import get_openai_callback
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt
@@ -25,9 +26,29 @@ from sonika_ai_toolkit.utilities.questions import (
     questions_summary,
 )
 from sonika_ai_toolkit.tools.registry import ToolRegistry
+from sonika_ai_toolkit.tools.plan_tools import (
+    PLAN_SIGNAL_TOOL_NAMES,
+    SET_PLAN_TOOL_NAME,
+    SetPlanTool,
+    UpdateStepTool,
+)
+from sonika_ai_toolkit.skills import (
+    Skill,
+    merge_skill_tools,
+    render_skills_prompt,
+    resolve_skills,
+)
+from sonika_ai_toolkit.agents.extensions import CustomNode, validate_custom_nodes
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
 from sonika_ai_toolkit.agents.orchestrator.events import StatusEvent
+from sonika_ai_toolkit.agents.orchestrator.planning import (
+    PLANNING_PROTOCOL_PROMPT,
+    apply_update_step,
+    normalize_plan,
+    render_plan_status,
+    split_plan_signal_calls,
+)
 from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
 from sonika_ai_toolkit.agents.react import (
     extract_thinking,
@@ -87,6 +108,10 @@ class OrchestratorBot(IOrchestratorBot):
         prompts: Optional[Any] = None, # Legacy
         checkpointer: Any = None,
         enable_user_questions: bool = False,
+        enable_planning: bool = False,
+        skills: Optional[List[Skill]] = None,
+        skills_dir: Optional[str] = None,
+        custom_nodes: Optional[List[CustomNode]] = None,
     ):
         self.model = strong_model
         # Model used for image (vision) turns. Falls back to the strong model so
@@ -106,11 +131,20 @@ class OrchestratorBot(IOrchestratorBot):
             self.logger.addHandler(logging.NullHandler())
 
         self.memory_manager = MemoryManager(memory_path)
+        # NOTE: this attribute predates folder-based skills — it points to the
+        # memory-derived dir used by DynamicToolSynthesizer, NOT to the
+        # `skills_dir` constructor param (folder-based skills below).
         self.skills_dir = self.memory_manager.sessions_dir.replace("sessions", "skills")
+
+        # Folder/programmatic skills: instructions are appended to the system
+        # prompt; skill tools are merged into the tool list (explicitly-passed
+        # tools win on name collision).
+        self.skills = resolve_skills(skills, skills_dir)
+        self._skills_prompt = render_skills_prompt(self.skills)
 
         self.registry = ToolRegistry()
         self.tools = []
-        for tool in tools or []:
+        for tool in merge_skill_tools(list(tools or []), self.skills):
             self.registry.register(tool)
             self.tools.append(tool)
 
@@ -122,6 +156,19 @@ class OrchestratorBot(IOrchestratorBot):
             ask_tool = AskUserQuestionTool()
             self.registry.register(ask_tool)
             self.tools.append(ask_tool)
+
+        # Structured plan signal tools: registered only when planning is
+        # enabled; their calls are intercepted in agent_node, never executed.
+        self.enable_planning = enable_planning
+        if enable_planning:
+            for plan_tool in (SetPlanTool(), UpdateStepTool()):
+                if not self.registry.get(plan_tool.name):
+                    self.registry.register(plan_tool)
+                    self.tools.append(plan_tool)
+
+        self.custom_nodes = validate_custom_nodes(
+            custom_nodes, reserved_names={"agent", "tools"}
+        )
 
         self.model_with_tools = self.model.model.bind_tools(self.tools) if self.tools else self.model.model
         self.checkpointer = checkpointer or MemorySaver()
@@ -142,15 +189,22 @@ class OrchestratorBot(IOrchestratorBot):
     def _build_workflow(self) -> StateGraph:
         async def agent_node(state: OrchestratorState) -> Dict[str, Any]:
             mode = state.get("mode", "ask")
-            goal = state.get("goal", "")
 
             # Load memory dynamically (simplified)
             memory_context = self.memory_manager.read_memory()
 
             system_prompt = self.instructions + f"\n\nContexto de memoria:\n{memory_context}"
 
+            if self._skills_prompt:
+                system_prompt += "\n\n" + self._skills_prompt
+
             if mode == "plan":
                 system_prompt += "\n\n[MODO PLAN] Ignora todas tus herramientas. Devuelve ÚNICAMENTE un plan detallado paso a paso en texto plano/markdown para resolver la petición del usuario. NO EJECUTES HERRAMIENTAS."
+            elif self.enable_planning:
+                system_prompt += "\n\n" + PLANNING_PROTOCOL_PROMPT
+                plan_snapshot = state.get("plan") or []
+                if plan_snapshot:
+                    system_prompt += "\n\n" + render_plan_status(plan_snapshot)
 
             # Vision turn: with tools bound, some models (e.g. gpt-4o-mini) refuse an
             # image question ("no puedo ayudar") when no tool applies. So for image
@@ -223,7 +277,29 @@ class OrchestratorBot(IOrchestratorBot):
                     tool_calls=tc,
                     additional_kwargs=getattr(accumulated_chunk, "additional_kwargs", {}),
                 )
-                
+
+            # Track plan signal tools (set_plan / update_step): apply them to the
+            # graph state so this agent update carries `plan` / `step_events`.
+            # The calls stay in the message — tools_node acknowledges them with a
+            # no-op ToolMessage so the history remains a normal tool round-trip
+            # (models misbehave when the conversation ends on a bare AI message).
+            plan_updates: Dict[str, Any] = {}
+            if self.enable_planning and getattr(response, "tool_calls", None):
+                signal_calls, _real_calls = split_plan_signal_calls(response.tool_calls)
+                if signal_calls:
+                    plan = list(state.get("plan") or [])
+                    step_events: List[Dict[str, Any]] = []
+                    for call in signal_calls:
+                        args = call.get("args") or {}
+                        if call.get("name") == SET_PLAN_TOOL_NAME:
+                            plan = normalize_plan(args.get("steps"))
+                        else:
+                            plan = apply_update_step(plan, args.get("step"), args.get("status"))
+                            step_events.append({"step": args.get("step"), "status": args.get("status")})
+                    plan_updates["plan"] = plan
+                    if step_events:
+                        plan_updates["step_events"] = step_events
+
             new_thinking = extract_thinking(response)
             if new_thinking and self.on_thinking and not thinking_emitted:
                 self.on_thinking(new_thinking)
@@ -240,6 +316,7 @@ class OrchestratorBot(IOrchestratorBot):
                 "thinking": accumulated_thinking,
                 "status_events": retry_events,
             }
+            result.update(plan_updates)
 
             if not response.tool_calls:
                 # Final turn — set final_report
@@ -281,6 +358,18 @@ class OrchestratorBot(IOrchestratorBot):
                 
                 if not tool_instance:
                     results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: Tool '{tool_name}' not found."))
+                    continue
+
+                # Plan signal tools were already applied to state by agent_node;
+                # here they only get a no-op acknowledgment ToolMessage so the
+                # history stays consistent. They are NOT real actions, so they
+                # are excluded from tools_executed.
+                if tool_name in PLAN_SIGNAL_TOOL_NAMES:
+                    try:
+                        ack = tool_instance._run(**tool_args)
+                    except Exception as e:
+                        ack = f"Error: {e}"
+                    results.append(ToolMessage(tool_call_id=tool_call["id"], content=str(ack)))
                     continue
 
                 # Structured question: pause via native interrupt and wait for the
@@ -383,10 +472,38 @@ class OrchestratorBot(IOrchestratorBot):
         workflow = StateGraph(OrchestratorState)
         workflow.add_node("agent", agent_node)
         workflow.add_node("tools", tools_node)
-        
-        workflow.set_entry_point("agent")
-        workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-        workflow.add_edge("tools", "agent")
+
+        # Consumer-provided custom nodes (see agents/extensions.py). With none,
+        # the wiring below is identical to the classic two-node ReAct graph.
+        start_nodes = [c for c in self.custom_nodes if c.position == "start"]
+        after_tools_nodes = [c for c in self.custom_nodes if c.position == "after_tools"]
+        end_nodes = [c for c in self.custom_nodes if c.position == "end"]
+        for custom in self.custom_nodes:
+            workflow.add_node(custom.name, custom.node)
+
+        def _chain(nodes: List[CustomNode], target: str) -> None:
+            for prev, nxt in zip(nodes, nodes[1:]):
+                workflow.add_edge(prev.name, nxt.name)
+            workflow.add_edge(nodes[-1].name, target)
+
+        if start_nodes:
+            workflow.set_entry_point(start_nodes[0].name)
+            _chain(start_nodes, "agent")
+        else:
+            workflow.set_entry_point("agent")
+
+        end_target = end_nodes[0].name if end_nodes else END
+        workflow.add_conditional_edges(
+            "agent", should_continue, {"tools": "tools", END: end_target}
+        )
+        if end_nodes:
+            _chain(end_nodes, END)
+
+        if after_tools_nodes:
+            workflow.add_edge("tools", after_tools_nodes[0].name)
+            _chain(after_tools_nodes, "agent")
+        else:
+            workflow.add_edge("tools", "agent")
 
         return workflow
 
@@ -402,7 +519,6 @@ class OrchestratorBot(IOrchestratorBot):
 
         config = {"configurable": {"thread_id": current_thread}}
 
-        from langgraph.types import Command
 
         if goal:
             # First turn: provide initial state
@@ -416,6 +532,8 @@ class OrchestratorBot(IOrchestratorBot):
                 "tools_executed": [],
                 "status_events": [],
                 "partial_responses": [],
+                "plan": [],
+                "step_events": [],
             }
             # Add backward compatibility for old scripts using callbacks
             if self.on_message:
@@ -451,10 +569,20 @@ class OrchestratorBot(IOrchestratorBot):
             "tools_executed": [],
             "status_events": [],
             "partial_responses": [],
+            "plan": [],
+            "step_events": [],
         }
-        
-        # In `arun` (used by older tests/chat.py), we just want the final result
-        final_state = await self.graph.ainvoke(initial_state, config=config)
+
+        # In `arun` (used by older tests/chat.py), we just want the final result.
+        # Wrap in the OpenAI callback so token usage is tracked (works for
+        # OpenAI-compatible providers: openai, deepseek). Others report 0.
+        with get_openai_callback() as cb:
+            final_state = await self.graph.ainvoke(initial_state, config=config)
+        token_usage = {
+            "prompt_tokens": cb.prompt_tokens,
+            "completion_tokens": cb.completion_tokens,
+            "total_tokens": cb.total_tokens,
+        }
 
         # If the agent called ask_user, the graph paused on a native interrupt.
         # Surface the structured questions so non-streaming callers can react.
@@ -468,9 +596,9 @@ class OrchestratorBot(IOrchestratorBot):
             thinking=final_state.get("thinking", None),
             tools_executed=final_state.get("tools_executed", []),
             logs=final_state.get("session_log", []),
-            token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            token_usage=token_usage,
             success=True,
-            plan=[],
+            plan=final_state.get("plan", []) or [],
             session_id=current_thread,
             goal=goal,
             questions=question_payload.get("questions", []) if question_payload else [],

@@ -25,3 +25,7 @@ class OrchestratorState(TypedDict):
     session_log: Annotated[List[str], operator.add]
     tools_executed: Annotated[List[Dict[str, Any]], operator.add]
     status_events: Annotated[List[Dict[str, Any]], operator.add]
+
+    # ── Structured plan (only populated when enable_planning=True) ─────────
+    plan: List[Dict[str, Any]]  # snapshot of PlanStep dicts (last-write-wins)
+    step_events: Annotated[List[Dict[str, Any]], operator.add]

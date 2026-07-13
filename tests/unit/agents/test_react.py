@@ -1,21 +1,24 @@
 """
-Unit tests for sonika_ai_toolkit.agents.react._InternalToolLogger
+Unit tests for sonika_ai_toolkit.agents.react.
 
 Covers:
-  - on_llm_start: appends "[AGENT] Thinking..." log
-  - on_llm_end: logs tool call names or "Generated response"
-  - on_tool_start: appends execution record, calls on_start callback
-  - on_tool_end: updates execution record, calls on_end callback
-  - on_tool_error: updates execution record, calls on_error callback
-  - Callback resilience: exceptions in user callbacks are swallowed
+  _InternalToolLogger
+    - on_llm_start: appends "[AGENT] Thinking..." log
+    - on_llm_end: logs tool call names or "Generated response"
+    - on_tool_start/end/error: execution records + user callbacks
+    - Callback resilience: exceptions in user callbacks are swallowed
+  ReactBot ask_user flow
+    - enable_user_questions registration and terminal-question surfacing in
+      BotResponse (needs_input / questions) and in the stream ("questions" event)
 """
 
-import pytest
-from unittest.mock import MagicMock, call
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from unittest.mock import MagicMock
+from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.outputs import ChatGeneration
 
-from sonika_ai_toolkit.agents.react import _InternalToolLogger
+from sonika_ai_toolkit.agents.react import ReactBot, _InternalToolLogger
+from sonika_ai_toolkit.tools.ask_user import AskUserQuestionTool
+from sonika_ai_toolkit.utilities.questions import ASK_USER_TOOL_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +55,7 @@ class TestOnLlmStart:
         logger = _make_logger()
         logger.on_llm_start({}, ["p1"])
         logger.on_llm_start({}, ["p2"])
-        thinking_logs = [l for l in logger.execution_logs if "Thinking" in l]
+        thinking_logs = [line for line in logger.execution_logs if "Thinking" in line]
         assert len(thinking_logs) == 2
 
 
@@ -71,7 +74,7 @@ class TestOnLlmEnd:
         logger = _make_logger()
         response = _make_llm_end_response(tool_names=["email_tool", "save_contact"])
         logger.on_llm_end(response)
-        log_entry = next((l for l in logger.execution_logs if "Decided to call tools" in l), None)
+        log_entry = next((line for line in logger.execution_logs if "Decided to call tools" in line), None)
         assert log_entry is not None
         assert "email_tool" in log_entry
         assert "save_contact" in log_entry
@@ -98,7 +101,7 @@ class TestOnToolStart:
     def test_appends_execution_log_entries(self):
         logger = _make_logger()
         logger.on_tool_start({"name": "my_tool"}, "input data")
-        assert any("my_tool" in l for l in logger.execution_logs)
+        assert any("my_tool" in line for line in logger.execution_logs)
 
     def test_calls_on_start_callback(self):
         cb = MagicMock()
@@ -174,7 +177,7 @@ class TestOnToolEnd:
         logger = _make_logger()
         self._start_tool(logger)
         logger.on_tool_end("done")
-        assert any("completed successfully" in l for l in logger.execution_logs)
+        assert any("completed successfully" in line for line in logger.execution_logs)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +223,7 @@ class TestOnToolError:
         logger = _make_logger()
         self._start_tool(logger)
         logger.on_tool_error(Exception("oops"))
-        assert any("failed" in l for l in logger.execution_logs)
+        assert any("failed" in line for line in logger.execution_logs)
 
 
 # ---------------------------------------------------------------------------
@@ -239,3 +242,140 @@ class TestNoCallbackLogger:
         assert logger.tool_executions == []
         assert logger.execution_logs == []
         assert logger.current_tool_name is None
+
+
+# ---------------------------------------------------------------------------
+# ReactBot — ask_user (structured user questions) flow
+# ---------------------------------------------------------------------------
+
+_ASK_ARGS = {
+    "reason": "Necesito datos para continuar",
+    "questions": [
+        {
+            "id": "color",
+            "text": "¿Qué color prefieres?",
+            "type": "single_choice",
+            "options": [
+                {"value": "r", "label": "Rojo"},
+                {"value": "b", "label": "Azul"},
+            ],
+            "required": True,
+        }
+    ],
+}
+
+
+def _model_that_asks(mock_raw_model: MagicMock) -> MagicMock:
+    """Configure the mock so the first agent step calls ask_user."""
+    chunk = AIMessageChunk(content="")
+    chunk.tool_calls = [{"name": ASK_USER_TOOL_NAME, "args": _ASK_ARGS, "id": "call_1"}]
+    mock_raw_model.stream.return_value = iter([chunk])
+    return mock_raw_model
+
+
+class TestReactBotAsks:
+    def test_disabled_by_default_registers_no_tool(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        assert all(t.name != ASK_USER_TOOL_NAME for t in bot.tools)
+
+    def test_enable_registers_ask_tool(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       enable_user_questions=True)
+        assert any(t.name == ASK_USER_TOOL_NAME for t in bot.tools)
+
+    def test_enable_does_not_double_register(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[AskUserQuestionTool()], enable_user_questions=True)
+        assert sum(t.name == ASK_USER_TOOL_NAME for t in bot.tools) == 1
+
+    def test_get_response_surfaces_questions(self, mock_language_model, mock_raw_model):
+        _model_that_asks(mock_raw_model)
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       enable_user_questions=True)
+        result = bot.get_response(user_input="Quiero algo")
+
+        assert result.needs_input is True
+        assert len(result.questions) == 1
+        assert result.questions[0]["id"] == "color"
+        assert "color" in result.content.lower()
+        # The ask tool must NOT have executed as a real action.
+        assert all(t["tool_name"] != ASK_USER_TOOL_NAME or t.get("status") != "success"
+                   for t in result.tools_executed) or not result.tools_executed
+
+    def test_normal_answer_has_no_questions(self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.return_value = iter([AIMessageChunk(content="Listo!")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       enable_user_questions=True)
+        result = bot.get_response(user_input="Hola")
+        assert result.needs_input is False
+        assert result.questions == []
+        assert result.content == "Listo!"
+
+    def test_stream_emits_questions_event(self, mock_language_model, mock_raw_model):
+        _model_that_asks(mock_raw_model)
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       enable_user_questions=True)
+        events = list(bot.stream_response(user_message="Quiero algo", messages=[], logs=[]))
+        q_events = [e for e in events if e.get("type") == "questions"]
+        assert len(q_events) == 1
+        assert q_events[0]["questions"][0]["id"] == "color"
+        done = [e for e in events if e.get("type") == "done"]
+        assert done and done[0]["result"].needs_input is True
+
+
+class TestReactBotSkills:
+    """Folder/programmatic skills: prompt injection + tool merge."""
+
+    def _skill(self, name="facturacion", tool_name="facturar"):
+        from sonika_ai_toolkit.skills import Skill
+        tool = MagicMock()
+        tool.name = tool_name
+        return Skill(name=name, instructions="Sabes generar facturas.", tools=[tool])
+
+    def test_skill_instructions_in_system_prompt(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       skills=[self._skill()])
+        prompt = bot._build_system_prompt(include_fallback_think=False)
+        assert "facturacion" in prompt
+        assert "Sabes generar facturas." in prompt
+
+    def test_skill_tools_merged(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       skills=[self._skill()])
+        assert any(t.name == "facturar" for t in bot.tools)
+
+    def test_explicit_tool_wins_on_name_collision(self, mock_language_model):
+        mine = MagicMock()
+        mine.name = "facturar"
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[mine], skills=[self._skill()])
+        matching = [t for t in bot.tools if t.name == "facturar"]
+        assert matching == [mine]
+
+    def test_caller_tool_list_not_mutated(self, mock_language_model):
+        caller_tools = []
+        ReactBot(language_model=mock_language_model, instructions="x",
+                 tools=caller_tools, skills=[self._skill()],
+                 enable_user_questions=True)
+        assert caller_tools == []
+
+    def test_ask_user_still_single_with_skills(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       skills=[self._skill()], enable_user_questions=True)
+        assert sum(t.name == ASK_USER_TOOL_NAME for t in bot.tools) == 1
+
+    def test_no_skills_is_noop(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        assert bot.skills == []
+        assert bot._skills_prompt == ""
+        prompt = bot._build_system_prompt(include_fallback_think=False)
+        assert "## SKILLS" not in prompt
+
+    def test_skills_dir_loaded(self, mock_language_model, tmp_path):
+        d = tmp_path / "reportes"
+        d.mkdir()
+        (d / "SKILL.md").write_text("Sabes hacer reportes.", encoding="utf-8")
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       skills_dir=str(tmp_path))
+        assert [s.name for s in bot.skills] == ["reportes"]
+        assert "Sabes hacer reportes." in bot._skills_prompt

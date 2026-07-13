@@ -24,16 +24,17 @@ pytest tests/e2e/ -m e2e -s -v
 pytest tests/e2e/ -m e2e -k openai -s
 
 # Run a specific test file
-pytest tests/unit/test_models.py
+pytest tests/unit/utilities/test_models.py
 
 # Run specific test
-pytest tests/unit/test_models.py::TestOpenAILanguageModel::test_init_default_model_name
+pytest tests/unit/utilities/test_models.py::TestOpenAILanguageModel::test_init_default_model_name
 
 # Run contract tests
-pytest tests/unit/test_orchestrator_contract.py -v
+pytest tests/unit/agents/orchestrator/test_contract.py -v
 
-# Run stress test suite (banking scenario, interactive)
-python tests/ultimate/banking_operations/stress_test_runner.py
+# Run the model/agent benchmark (real API keys — standalone, not pytest)
+python benchmarks/run.py --agents react --models openai:gpt-4o-mini
+python benchmarks/run.py --list   # discover agents / providers / scenarios
 
 # Lint
 ruff check .
@@ -63,6 +64,7 @@ docs/
 ├── classifiers.md         # TextClassifier, Intent, Sentiment, Safety, Image — with examples
 ├── models.md              # OpenAI, Gemini, DeepSeek, Bedrock — config + gotchas
 ├── tools.md               # 18 built-in tools + custom tool creation with Pydantic
+├── skills.md              # Folder-based skills (SKILL.md + tools.py) for all bots
 └── interfaces.md          # BaseInterface, BotResponse, stream event TypedDicts
 ```
 
@@ -84,24 +86,57 @@ docs/
 
 ### Test Structure
 
+The `tests/unit/` tree mirrors `src/sonika_ai_toolkit/` 1:1 — one test file per
+module. Markers (`unit`/`integration`/`e2e`) are applied automatically by
+directory via a `pytest_collection_modifyitems` hook in `tests/conftest.py`, so
+files don't declare `pytestmark`.
+
 ```
 tests/
-├── conftest.py          # Shared mocks — no API keys needed
-├── unit/                # ~310 tests — isolated, ~5s
-│   ├── test_models.py                  # LLM wrapper tests (all providers)
-│   ├── test_classifiers.py            # Classifier tests (28 tests)
-│   └── test_orchestrator_contract.py  # Interface contract tests (37 tests)
+├── conftest.py                       # Shared mocks + auto-marking hook — no API keys needed
+├── unit/                             # ~370 tests — isolated, ~5s
+│   ├── utilities/
+│   │   ├── test_models.py            # LLM wrappers (all providers)
+│   │   ├── test_types.py             # BotResponse, ILanguageModel, Message
+│   │   └── test_questions.py         # ask_user contract (schema/payload/summary)
+│   ├── classifiers/
+│   │   └── test_classifiers.py       # Text/Intent/Sentiment/Safety/Image
+│   ├── tools/
+│   │   ├── test_core_tools.py        # bash, files, http, python, search, web, datetime, email
+│   │   ├── test_database_tools.py    # SQLite, PostgreSQL, MySQL, Redis
+│   │   ├── test_integrations.py      # EmailTool, SaveContacto
+│   │   ├── test_ask_user.py          # AskUserQuestionTool
+│   │   ├── test_plan_tools.py        # set_plan / update_step signal tools
+│   │   ├── test_registry.py          # ToolRegistry
+│   │   └── test_synthesizer.py       # DynamicToolSynthesizer
+│   ├── skills/
+│   │   └── test_loader.py            # Skill.from_dir, load_skills, merge/render helpers
+│   ├── agents/
+│   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow + skills
+│   │   ├── test_tasker.py            # TaskerBot construction / get_response / limits / skills / node overrides
+│   │   └── orchestrator/
+│   │       ├── test_contract.py      # Interface contract tests
+│   │       ├── test_graph.py         # agent/tools graph, partial responses
+│   │       ├── test_graph_planning.py # enable_planning: plan snapshot + step events + arun plan
+│   │       ├── test_custom_nodes.py  # custom node validation + wiring (start/after_tools/end)
+│   │       ├── test_planning.py      # pure plan helpers (normalize/apply/render/split)
+│   │       ├── test_risk.py          # risk-gate helpers
+│   │       └── test_memory.py        # MemoryManager
+│   └── document_processing/
+│       └── test_processor.py         # DocumentProcessor (tokens, extract, chunks)
 ├── integration/         # Tests with mocked component interaction
+│   └── test_reactbot_flow.py
 ├── e2e/                 # Real API calls, skip if key missing
 │   ├── conftest.py      # ← MODEL CONFIGURATION (change model name here)
 │   ├── test_reactbot.py
 │   ├── test_orchestratorbot.py
 │   └── test_classifiers.py           # Classifier e2e tests (10 tests)
-└── ultimate/            # Stress test suite (standalone runner, not pytest)
-    └── banking_operations/
-        ├── batch_runner.py      # Run: python batch_runner.py
-        └── stress_test_runner.py
+└── fixtures/            # Custom test fixtures (if needed)
 ```
+
+The former `tests/ultimate/` stress suite was removed. Measurable model/agent
+comparison now lives in the standalone **`benchmarks/`** harness (real API keys,
+not pytest) — see `benchmarks/README.md`. Run it with `python benchmarks/run.py`.
 
 ### Changing the test model (one place)
 
@@ -240,6 +275,45 @@ Each `run(goal)` call:
 - `"auto"` — executes all tools without interrupting
 - `"plan"` — forces the model to return a plan as text (tool calls stripped)
 
+**Structured plan + step progress (`enable_planning=True`, opt-in):**
+
+Registers two internal *signal* tools (`set_plan`, `update_step` in
+`tools/plan_tools.py`) and appends a planning protocol to the system prompt
+(`orchestrator/planning.py`). `agent_node` tracks these calls and emits state
+deltas that surface in the `"updates"` stream: `{"agent": {"plan": [PlanStep,
+...]}}` and `{"agent": {"step_events": [StepEvent, ...]}}`. The calls stay in
+the message: `tools_node` answers them with a no-op acknowledgment ToolMessage
+(excluded from `tools_executed`) so the history remains a normal tool
+round-trip — models return empty when the conversation ends on a bare AI
+message, so do NOT strip the calls. `run`/`arun` return the final snapshot in
+`BotResponse.plan`. With `enable_planning=False` (default) the behavior and
+stream payloads are byte-identical to before. Text-only `mode="plan"` is
+unaffected (planning protocol not appended there).
+
+**Custom nodes (`custom_nodes=[CustomNode(...)]`):**
+
+`CustomNode(name, node, position)` from `agents/extensions.py` injects
+consumer LangGraph nodes at `"start"` (entry → agent, once), `"after_tools"`
+(tools → agent edge, every loop) or `"end"` (agent final turn → END). Names
+`agent`/`tools` are reserved; multiple nodes at one position chain in list
+order; updates stream under the node's own name. TaskerBot instead accepts
+node *instance overrides* (`planner_node=`, `executor_node=`, `validator_node=`,
+`output_node=`, `logger_node=`) — swap implementations, topology fixed.
+
+**Skills (all three bots — `skills=[Skill, ...]` and/or `skills_dir="./skills"`):**
+
+Folder-based capability packs (`src/sonika_ai_toolkit/skills/loader.py`): each
+subfolder has a `SKILL.md` (optional `---` frontmatter `name:`/`description:`;
+body = instructions) and optional `tools.py` (BaseTool subclasses defined in
+the file are instantiated — imported classes ignored). Instructions render as
+a `## SKILLS` block appended to the system prompt (ReactBot
+`_build_system_prompt`, Orchestrator `agent_node`, Tasker planner prompt);
+tools merge into the bot's list **before** bind_tools, deduped by name with
+explicitly-passed tools winning. Broken skills are logged and skipped.
+`tools.py` executes arbitrary Python — only trusted directories. NOTE:
+OrchestratorBot's `self.skills_dir` *attribute* (memory-derived, for
+DynamicToolSynthesizer) is unrelated to the `skills_dir` constructor param.
+
 **Retry with rate-limit events:**
 
 ```python
@@ -296,8 +370,11 @@ from sonika_ai_toolkit import (
     OrchestratorBot, IOrchestratorBot,
     # Agent interfaces
     IBot, IConversationBot,
+    # Skills + custom nodes
+    Skill, load_skills, CustomNode,
     # Stream event types
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
+    PlanStep, StepEvent,
     # Response type
     BotResponse, ILanguageModel,
     # LLM providers

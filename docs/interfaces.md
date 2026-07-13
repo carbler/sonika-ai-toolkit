@@ -113,7 +113,28 @@ Payload from the `agent` node in `"updates"` stream mode:
     "partial_response": "Searching...",
     "thinking": "Let me analyze...",
     "status_events": [{"type": "retrying", ...}],
+    # Only when the bot was built with enable_planning=True:
+    "plan": [{"step": 1, "description": "...", "status": "pending"}, ...],
+    "step_events": [{"step": 1, "status": "running"}],
 }
+```
+
+### PlanStep
+
+One step of the structured plan (emitted when `enable_planning=True`):
+
+```python
+{"step": 1, "description": "Buscar datos", "status": "pending"}
+# status: pending | running | done | skipped | error
+```
+
+### StepEvent
+
+A progress transition for one plan step:
+
+```python
+{"step": 1, "status": "running"}
+# status: running | done | skipped | error
 ```
 
 ### ToolsUpdate

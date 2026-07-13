@@ -12,12 +12,11 @@ from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
 from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
 from sonika_ai_toolkit.agents.orchestrator.events import (
     AgentUpdate,
-    ToolsUpdate,
     StatusEvent,
     ToolRecord,
     PartialResponseEvent,
 )
-from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
+from sonika_ai_toolkit.utilities.types import BotResponse
 from sonika_ai_toolkit.interfaces.base import BaseInterface
 
 
@@ -233,7 +232,7 @@ class TestPublicAPI:
         assert BaseInterface is not None
 
     def test_event_types_importable_from_top_level(self):
-        from sonika_ai_toolkit import AgentUpdate, StatusEvent, ToolRecord
+        from sonika_ai_toolkit import AgentUpdate
         assert AgentUpdate is not None
 
     def test_partial_response_event_importable(self):
@@ -241,7 +240,7 @@ class TestPublicAPI:
         assert PartialResponseEvent is not None
 
     def test_core_tools_importable_from_top_level(self):
-        from sonika_ai_toolkit import FindFileTool, RunBashTool
+        from sonika_ai_toolkit import FindFileTool
         assert FindFileTool is not None
 
     def test_ibot_hierarchy_importable_from_top_level(self):
