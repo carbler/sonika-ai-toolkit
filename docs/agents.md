@@ -30,6 +30,35 @@ print(response.content)
 
 Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API.
 
+### How the Graph Works
+
+The compiled graph has exactly **two built-in nodes** — `agent` and `tools` —
+wired as a loop:
+
+```
+        ┌─────────┐   tool_calls?    ┌─────────┐
+ START ─▶  agent   ├─────────────────▶  tools   │
+        └────┬────┘                  └────┬────┘
+             │  no tool_calls              │
+             ▼                             │
+            END  ◀─────────────────────────┘
+                     (back to agent)
+```
+
+- **`agent`** builds the system prompt (instructions + memory + skills +
+  mode-specific text), calls the LLM, and decides what happened: if the
+  response has tool calls it hands off to `tools`; otherwise the text becomes
+  `final_report` and the run ends.
+- **`tools`** executes every tool call from the last agent turn — real tools,
+  `ask_user` (pauses via a native interrupt), and, when planning is on, the
+  `set_plan`/`update_step` signal tools (acknowledged, not executed) — then
+  loops back to `agent` with the results.
+
+There is **no dedicated "plan node"**. Planning is a conditional *behavior*
+of the `agent` node itself (see below) — the graph topology never changes
+because of it. `custom_nodes` (further down) are the only way to add real
+extra nodes to this loop.
+
 ### Sync Usage
 
 ```python
@@ -99,11 +128,43 @@ asyncio.run(main())
 
 ### Structured Plan & Step Progress (`enable_planning`)
 
-With `enable_planning=True` the orchestrator registers two internal *signal*
-tools (`set_plan`, `update_step`) and instructs the model to announce a plan
-before working and report per-step progress. The calls perform no real action
-(they get a no-op acknowledgment and never appear in `tools_executed`); the
-plan and its progress surface through the `"updates"` stream:
+**When does it activate?** All of the following must be true — miss any one
+and the graph behaves exactly as if planning didn't exist:
+
+1. The bot was built with `enable_planning=True` (default `False` — opt-in).
+   This is the only thing that registers the `set_plan`/`update_step` tools
+   and appends the planning protocol to the system prompt; with the default,
+   the model never even sees those tools exist.
+2. The current turn's `mode` is **not** `"plan"`. `mode="plan"` is a separate,
+   older, mutually-exclusive behavior (free-text plan, all tools stripped) —
+   the two never combine.
+3. The model **itself decides** to call `set_plan` or `update_step` — the
+   graph never forces this. A simple one-shot question typically gets no
+   plan at all, even with `enable_planning=True`, because the model judges a
+   plan unnecessary. Multi-step goals are what the protocol prompt asks the
+   model to plan for.
+
+**How it flows through the graph** (no dedicated node — all inside `agent`):
+
+1. `agent` runs with the planning protocol + current plan snapshot in the
+   prompt. The model calls `set_plan(steps=[...])`, alone or alongside real
+   tool calls for the first step.
+2. `agent` intercepts that call *before* storing the message: it builds the
+   `plan` snapshot (all steps `"pending"`) and puts it in this turn's state
+   update — the call itself stays in the message.
+3. Because the message still has tool calls, `should_continue` routes to
+   `tools`. There, `set_plan`/`update_step` get a no-op acknowledgment
+   ToolMessage (so the conversation stays a normal tool round-trip) and are
+   **excluded from `tools_executed`** — they performed no real action. Any
+   real tool calls in the same turn execute normally.
+4. Back in `agent`, the updated plan snapshot renders into the prompt so the
+   model sees step 1 is already registered and doesn't re-announce it. The
+   model now calls `update_step(1, "running")` alongside the real tool(s) for
+   that step, then later `update_step(1, "done")`, then moves to step 2, and
+   so on until all steps are done and the model returns final text with no
+   more tool calls — ending the run at `agent` as usual.
+
+Each of these turns surfaces through the `"updates"` stream:
 
 ```python
 bot = OrchestratorBot(..., enable_planning=True)
@@ -139,7 +200,8 @@ unaffected.
 
 ### Custom Nodes (`custom_nodes`)
 
-Inject your own LangGraph nodes into the orchestrator graph without forking:
+Inject your own LangGraph nodes into the `agent ⇄ tools` loop shown above,
+without forking:
 
 ```python
 from sonika_ai_toolkit import CustomNode

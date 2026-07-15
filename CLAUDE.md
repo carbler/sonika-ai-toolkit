@@ -274,6 +274,10 @@ Each `run(goal)` call:
 
 **Structured plan + step progress (`enable_planning=True`, opt-in):**
 
+There is no separate "plan node" — the graph is always just `agent ⇄ tools`.
+Planning is a conditional *behavior* of `agent_node`, active only when (1)
+`enable_planning=True` at construction, (2) `mode != "plan"`, and (3) the
+model itself chooses to call the signal tools (never forced by the graph).
 Registers two internal *signal* tools (`set_plan`, `update_step` in
 `tools/plan_tools.py`) and appends a planning protocol to the system prompt
 (`orchestrator/planning.py`). `agent_node` tracks these calls and emits state

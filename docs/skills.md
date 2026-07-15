@@ -93,6 +93,34 @@ bot = ReactBot(
 )
 ```
 
+## How Skills Interact With the Graph
+
+Skills are **not** a node and don't add any conditional routing — they are
+resolved once, at bot construction, and then apply unconditionally on every
+turn for the rest of that bot's life:
+
+1. **At construction** (`__init__`), `skills=`/`skills_dir=` are loaded once
+   via `resolve_skills()`. Their instructions are pre-rendered into one string
+   (`self._skills_prompt`) and their tools are merged into the bot's tool list
+   **before** `bind_tools()` — so skill tools are indistinguishable from any
+   other tool by the time the graph is built.
+2. **Every turn**, the `agent` node (OrchestratorBot) or the prompt builder
+   (ReactBot) appends `self._skills_prompt` to the system prompt — right after
+   the base `instructions` (and, for the orchestrator, after the memory
+   context, before mode-specific text like `[MODO PLAN]`). This happens
+   regardless of mode, `enable_planning`, or what the user asked — the model
+   always sees the skill instructions.
+3. **Skill tools run through the normal `tools` node** like any built-in
+   tool: no interception, no acknowledgment step. If the model calls a skill
+   tool it executes for real and shows up in `tools_executed`, exactly like
+   `RunBashTool` or any other tool would.
+
+So "when does a skill act?" has a simpler answer than planning: the
+instructions are **always** in context; a skill's *tool* only runs when the
+model decides to call it — the same as any other tool. There's no separate
+flag to enable skills at runtime (unlike `enable_planning`) — passing
+`skills=`/`skills_dir=` at construction is the only switch.
+
 ## Semantics
 
 - **Instructions** are rendered as a `## SKILLS` block appended to the system
