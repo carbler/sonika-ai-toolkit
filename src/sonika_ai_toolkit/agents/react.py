@@ -2,7 +2,11 @@ from typing import List, Optional, Dict, Any, TypedDict, Annotated, Callable, Un
 import asyncio
 import logging
 import inspect
+import operator
 import re
+import time
+import uuid
+from datetime import datetime, timezone
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage, ToolMessage, SystemMessage
 from langchain_community.tools import BaseTool
 from langchain_core.callbacks import BaseCallbackHandler
@@ -131,6 +135,65 @@ def extract_thinking(response: AIMessage) -> Optional[str]:
     return None
 
 
+def _wrap_node_traced(name: str, fn: Callable) -> Callable:
+    """Wrap a graph node so every execution appends a node-trace entry.
+
+    The entry ``{"node", "run_id", "ts"}`` rides in the node's own state delta
+    under ``node_trace`` (an ``operator.add`` channel), so it surfaces both in
+    the ``updates`` stream and in the final state. Works with sync and async
+    node callables. If the node returns a full state (instead of a delta) any
+    pre-existing ``node_trace`` key is replaced, never re-added.
+    """
+    def _annotate(state, result):
+        if isinstance(result, dict):
+            entry = {
+                "node": name,
+                "run_id": state.get("run_id", ""),
+                "ts": time.time(),
+            }
+            result = {**result, "node_trace": [entry]}
+        return result
+
+    # Preserve sync/async nature: LangGraph runs sync nodes in a thread
+    # executor (some rely on that, e.g. to call asyncio.run internally).
+    if inspect.iscoroutinefunction(fn):
+        async def traced(state):
+            return _annotate(state, await fn(state))
+    else:
+        def traced(state):
+            return _annotate(state, fn(state))
+
+    traced.__name__ = f"traced_{name}"
+    return traced
+
+
+def _graph_topology(compiled_graph) -> Dict[str, Any]:
+    """Return the static node/edge layout of a compiled LangGraph.
+
+    Shape: ``{"entry": str, "nodes": [str], "edges": [{source, target,
+    conditional}]}``. Nodes include the virtual ``__start__``/``__end__``.
+    """
+    g = compiled_graph.get_graph()
+    edges = [
+        {"source": e.source, "target": e.target, "conditional": bool(e.conditional)}
+        for e in g.edges
+    ]
+    entry = next((e["target"] for e in edges if e["source"] == "__start__"), "")
+    return {"entry": entry, "nodes": list(g.nodes.keys()), "edges": edges}
+
+
+def _new_run_id() -> str:
+    """Unique id for one run (process) of a bot — must never repeat.
+
+    UTC timestamp (microsecond precision) + full UUID4: the date prefix makes
+    ids sortable and human-readable, the untruncated UUID4 (122 bits) makes a
+    collision impossible in practice even within the same microsecond.
+    Example: ``20260717T153045123456-1f2a…``.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    return f"{stamp}-{uuid.uuid4().hex}"
+
+
 # ============= STATE DEFINITION =============
 
 class ChatState(TypedDict):
@@ -148,6 +211,8 @@ class ChatState(TypedDict):
     token_usage: Dict[str, int]
     thinking: str
     pending_questions: Optional[Dict[str, Any]]
+    run_id: str
+    node_trace: Annotated[List[Dict[str, Any]], operator.add]
 
 
 # ============= CALLBACK HANDLER =============
@@ -476,6 +541,11 @@ class ReactBot(IConversationBot):
         if final_response:
             tool_logger.execution_logs.append(f"[BOT] {final_response}")
 
+        node_trace = [
+            {**entry, "seq": i + 1}
+            for i, entry in enumerate(state.get("node_trace") or [])
+        ]
+
         return BotResponse(
             content=final_response,
             thinking=state.get("thinking") or None,
@@ -484,6 +554,8 @@ class ReactBot(IConversationBot):
             token_usage=token_usage,
             questions=questions,
             needs_input=bool(questions),
+            run_id=state.get("run_id"),
+            node_trace=node_trace,
         )
 
     def _initialize_mcp(self, mcp_servers: Dict[str, Any]):
@@ -823,11 +895,13 @@ class ReactBot(IConversationBot):
             return "end"
 
         workflow = StateGraph(ChatState)
-        workflow.add_node("agent", agent_node)
+        # Every node is wrapped so its execution is recorded in `node_trace`
+        # (surfaces as {"type": "node"} stream events and BotResponse.node_trace).
+        workflow.add_node("agent", _wrap_node_traced("agent", agent_node))
 
         if self.tools:
-            workflow.add_node("tools", self.tool_validator_node)
-            workflow.add_node("ask_user", ask_user_node)
+            workflow.add_node("tools", _wrap_node_traced("tools", self.tool_validator_node))
+            workflow.add_node("ask_user", _wrap_node_traced("ask_user", ask_user_node))
 
         workflow.set_entry_point("agent")
 
@@ -883,6 +957,16 @@ class ReactBot(IConversationBot):
 
     # ===== PUBLIC API METHODS =====
 
+    def get_graph_topology(self) -> Dict[str, Any]:
+        """Static node/edge layout of the compiled graph, for drawing it.
+
+        Returns ``{"entry": str, "nodes": [str], "edges": [{"source", "target",
+        "conditional"}]}``. Nodes include the virtual ``__start__``/``__end__``
+        markers. The same payload (plus ``run_id``) is emitted as the first
+        ``{"type": "graph"}`` event of ``stream_response``.
+        """
+        return _graph_topology(self.graph)
+
     def get_response(
         self,
         user_input: str = None,
@@ -934,6 +1018,8 @@ class ReactBot(IConversationBot):
             "logs": limited_logs,
             "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "thinking": "",
+            "run_id": _new_run_id(),
+            "node_trace": [],
         }
 
         config = {"callbacks": [tool_logger]}
@@ -954,6 +1040,10 @@ class ReactBot(IConversationBot):
         """Stream the response, yielding incremental chunks.
 
         Yields dicts with one of the following shapes:
+            {"type": "graph", "run_id": str, "entry": str, "nodes": list, "edges": list}
+                — first event: full graph topology (nodes/edges) for drawing
+            {"type": "node", "run_id": str, "node": str, "seq": int, "ts": float}
+                — one graph node just executed (fires once per node run, in order)
             {"type": "thinking", "chunk": str}   — reasoning token (real-time for native models)
             {"type": "tool_call", "chunk": str}  — tool call being dispatched
             {"type": "content",  "chunk": str}   — response text token
@@ -977,12 +1067,15 @@ class ReactBot(IConversationBot):
         )
         tool_logger.execution_logs.append(f"[USER] {user_message}")
 
+        run_id = _new_run_id()
         initial_messages = limited_messages + [_build_user_message(user_message, images)]
         initial_state: ChatState = {
             "messages": initial_messages,
             "logs": limited_logs,
             "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "thinking": "",
+            "run_id": run_id,
+            "node_trace": [],
         }
         config = {"callbacks": [tool_logger]}
 
@@ -990,9 +1083,34 @@ class ReactBot(IConversationBot):
         previous_messages: List[BaseMessage] = list(initial_messages)
         previous_thinking = ""
         questions_emitted = False
+        node_seq = 0
+
+        # First event: the graph layout, so consumers can draw it up front.
+        yield {"type": "graph", "run_id": run_id, **self.get_graph_topology()}
 
         with get_openai_callback() as cb:
-            for state in self.graph.stream(initial_state, config=config, stream_mode="values"):
+            # Dual stream mode: "updates" tells us WHICH node just ran (one
+            # {node_name: delta} payload per execution); "values" carries the
+            # full state used for thinking/content/questions chunks below.
+            for stream_mode, payload in self.graph.stream(
+                initial_state, config=config, stream_mode=["updates", "values"]
+            ):
+                if stream_mode == "updates":
+                    for node_name, delta in payload.items():
+                        if node_name.startswith("__"):
+                            continue
+                        node_seq += 1
+                        trace = (delta or {}).get("node_trace") or [{}]
+                        yield {
+                            "type": "node",
+                            "run_id": run_id,
+                            "node": node_name,
+                            "seq": node_seq,
+                            "ts": trace[-1].get("ts", time.time()),
+                        }
+                    continue
+
+                state = payload
                 final_state = state
 
                 # Emit structured questions as soon as the agent asks the user.

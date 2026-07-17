@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional, AsyncGenerator
 
@@ -54,6 +55,9 @@ from sonika_ai_toolkit.agents.react import (
     extract_thinking,
     _has_image_content,
     _build_user_message,
+    _graph_topology,
+    _new_run_id,
+    _wrap_node_traced,
 )
 
 
@@ -470,8 +474,11 @@ class OrchestratorBot(IOrchestratorBot):
             return END
 
         workflow = StateGraph(OrchestratorState)
-        workflow.add_node("agent", agent_node)
-        workflow.add_node("tools", tools_node)
+        # Every node (built-in and custom) is wrapped so its execution is
+        # recorded in `node_trace` — the source of the ("graph", node_invoked)
+        # stream events and of BotResponse.node_trace.
+        workflow.add_node("agent", _wrap_node_traced("agent", agent_node))
+        workflow.add_node("tools", _wrap_node_traced("tools", tools_node))
 
         # Consumer-provided custom nodes (see agents/extensions.py). With none,
         # the wiring below is identical to the classic two-node ReAct graph.
@@ -479,7 +486,7 @@ class OrchestratorBot(IOrchestratorBot):
         after_tools_nodes = [c for c in self.custom_nodes if c.position == "after_tools"]
         end_nodes = [c for c in self.custom_nodes if c.position == "end"]
         for custom in self.custom_nodes:
-            workflow.add_node(custom.name, custom.node)
+            workflow.add_node(custom.name, _wrap_node_traced(custom.name, custom.node))
 
         def _chain(nodes: List[CustomNode], target: str) -> None:
             for prev, nxt in zip(nodes, nodes[1:]):
@@ -509,13 +516,30 @@ class OrchestratorBot(IOrchestratorBot):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    def get_graph_topology(self) -> Dict[str, Any]:
+        """Static node/edge layout of the compiled graph, for drawing it.
+
+        Returns ``{"entry": str, "nodes": [str], "edges": [{"source", "target",
+        "conditional"}]}``. Nodes include the virtual ``__start__``/``__end__``
+        markers and any custom nodes. The same payload (plus ``run_id``) is
+        emitted as the first ``("graph", …)`` event of ``astream_events``.
+        """
+        return _graph_topology(self.graph)
+
     async def astream_events(self, goal: str, mode: str = "ask", thread_id: str = None, images: Optional[List[str]] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """
         New Streaming API that yields typed events, completely decoupling logic from the UI.
         If `goal` is None/empty, it assumes we are resuming an interrupted state (from `Command`).
+
+        Besides LangGraph's ``("messages", …)`` / ``("updates", …)`` tuples,
+        yields a third stream mode ``"graph"``:
+          - ``("graph", GraphTopologyEvent)`` — first event of a new run: the
+            node/edge layout plus the unique ``run_id`` of this process.
+          - ``("graph", NodeInvokedEvent)``  — one per node execution, in
+            order, so consumers can animate the path taken over the topology.
         """
-        run_id = str(uuid.uuid4())[:8]
-        current_thread = thread_id or run_id
+        run_id = _new_run_id()
+        current_thread = thread_id or str(uuid.uuid4())[:8]
 
         config = {"configurable": {"thread_id": current_thread}}
 
@@ -527,6 +551,7 @@ class OrchestratorBot(IOrchestratorBot):
                 "mode": mode,
                 "messages": [_build_user_message(goal, images)],
                 "session_id": current_thread,
+                "run_id": run_id,
                 "skills_dir": self.skills_dir,
                 "session_log": [],
                 "tools_executed": [],
@@ -534,12 +559,21 @@ class OrchestratorBot(IOrchestratorBot):
                 "partial_responses": [],
                 "plan": [],
                 "step_events": [],
+                "node_trace": [],
             }
             # Add backward compatibility for old scripts using callbacks
             if self.on_message:
                 self.on_message(goal)
-                
+
             stream_input = input_state
+
+            # First event of the run: the graph layout, so consumers can draw
+            # the full graph before any node executes.
+            yield ("graph", {
+                "type": "graph_topology",
+                "run_id": run_id,
+                **self.get_graph_topology(),
+            })
         elif getattr(self, "_last_resume_command", None):
             # We are resuming from an interrupt!
             stream_input = self._last_resume_command
@@ -547,9 +581,26 @@ class OrchestratorBot(IOrchestratorBot):
         else:
             raise ValueError("Must provide either a goal or resume from an interrupt via astream_events(None, command).")
 
-        async for event in self.graph.astream(stream_input, config=config, stream_mode=["messages", "updates"]):
+        node_seq = 0
+        async for stream_mode, payload in self.graph.astream(stream_input, config=config, stream_mode=["messages", "updates"]):
+            # Synthesize a ("graph", node_invoked) signal per node execution.
+            # The run_id/ts come from the node's own node_trace delta so they
+            # stay consistent even across interrupt resumes.
+            if stream_mode == "updates" and isinstance(payload, dict):
+                for node_name, delta in payload.items():
+                    if node_name.startswith("__"):
+                        continue
+                    node_seq += 1
+                    trace = (delta or {}).get("node_trace") or [{}]
+                    yield ("graph", {
+                        "type": "node_invoked",
+                        "run_id": trace[-1].get("run_id") or run_id,
+                        "node": node_name,
+                        "seq": node_seq,
+                        "ts": trace[-1].get("ts") or time.time(),
+                    })
             # Yield structured events for the CLI
-            yield event
+            yield (stream_mode, payload)
 
     async def arun(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
         """
@@ -559,11 +610,13 @@ class OrchestratorBot(IOrchestratorBot):
         current_thread = thread_id or str(uuid.uuid4())[:8]
         config = {"configurable": {"thread_id": current_thread}}
 
+        run_id = _new_run_id()
         initial_state = {
             "goal": goal,
             "mode": "auto",  # Force auto so we don't interrupt old scripts
             "messages": [_build_user_message(goal, images)],
             "session_id": current_thread,
+            "run_id": run_id,
             "skills_dir": self.skills_dir,
             "session_log": [],
             "tools_executed": [],
@@ -571,6 +624,7 @@ class OrchestratorBot(IOrchestratorBot):
             "partial_responses": [],
             "plan": [],
             "step_events": [],
+            "node_trace": [],
         }
 
         # In `arun` (used by older tests/chat.py), we just want the final result.
@@ -591,6 +645,11 @@ class OrchestratorBot(IOrchestratorBot):
         if question_payload and not content:
             content = questions_summary(question_payload)
 
+        node_trace = [
+            {**entry, "seq": i + 1}
+            for i, entry in enumerate(final_state.get("node_trace") or [])
+        ]
+
         return BotResponse(
             content=content,
             thinking=final_state.get("thinking", None),
@@ -603,6 +662,8 @@ class OrchestratorBot(IOrchestratorBot):
             goal=goal,
             questions=question_payload.get("questions", []) if question_payload else [],
             needs_input=bool(question_payload),
+            run_id=run_id,
+            node_trace=node_trace,
         )
 
     @staticmethod

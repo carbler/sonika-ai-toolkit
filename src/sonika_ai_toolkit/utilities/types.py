@@ -19,6 +19,8 @@ class BotResponse(dict):
     token_usage    — {prompt_tokens, completion_tokens, total_tokens}
     questions      — structured questions the agent asks the caller (List[dict])
     needs_input    — True when the agent is waiting for answers to `questions`
+    run_id         — unique id of this run (timestamp + UUID4, never repeats)
+    node_trace     — ordered graph-node executions: [{node, run_id, seq, ts}, …]
 
     OrchestratorBot extras
     ----------------------
@@ -62,6 +64,16 @@ class BotResponse(dict):
     def needs_input(self) -> bool:
         """True when the agent paused to ask `questions` and awaits answers."""
         return self.get("needs_input", False)
+
+    @property
+    def run_id(self) -> Optional[str]:
+        """Unique id of this run (process) — UTC timestamp + full UUID4."""
+        return self.get("run_id")
+
+    @property
+    def node_trace(self) -> List[Dict[str, Any]]:
+        """Ordered record of graph-node executions: [{node, run_id, seq, ts}, …]."""
+        return self.get("node_trace", [])
 
     # ── OrchestratorBot extras ──────────────────────────────────────────────
 

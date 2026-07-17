@@ -62,6 +62,50 @@ class StepEvent(TypedDict):
     status: Literal["running", "done", "skipped", "error"]
 
 
+class GraphEdgeSpec(TypedDict):
+    """One directed edge of the compiled graph topology."""
+    source: str
+    target: str
+    conditional: bool  # True when the edge is taken via a router function
+
+
+class GraphTopologyEvent(TypedDict):
+    """First event of a run: the full node/edge layout of the compiled graph.
+
+    Emitted as ``("graph", payload)`` by ``OrchestratorBot.astream_events`` and
+    as ``{"type": "graph", ...}`` by ``ReactBot.stream_response`` so consumers
+    can draw the graph before any node runs.  Nodes include the virtual
+    ``__start__`` / ``__end__`` markers.
+    """
+    type: Literal["graph_topology"]
+    run_id: str        # unique id of this run (process)
+    entry: str         # first real node executed (e.g. "agent")
+    nodes: List[str]
+    edges: List[GraphEdgeSpec]
+
+
+class NodeInvokedEvent(TypedDict):
+    """A signal that one graph node just executed.
+
+    Emitted as ``("graph", payload)`` (OrchestratorBot) / ``{"type": "node"}``
+    (ReactBot) once per node execution, in order — replay them over the
+    topology to animate the path the bot took.
+    """
+    type: Literal["node_invoked"]
+    run_id: str
+    node: str          # node name ("agent", "tools", custom node names, …)
+    seq: int           # 1-based execution order within the run
+    ts: float          # epoch seconds when the node finished
+
+
+class NodeTraceEntry(TypedDict):
+    """One entry of ``BotResponse.node_trace`` — the recorded execution path."""
+    node: str
+    run_id: str
+    seq: int
+    ts: float
+
+
 class ToolRecord(TypedDict):
     """A record of a single tool execution captured by the tools node."""
     tool_name: str

@@ -19,6 +19,10 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     QuestionOptionEvent,
     PlanStep,
     StepEvent,
+    GraphEdgeSpec,
+    GraphTopologyEvent,
+    NodeInvokedEvent,
+    NodeTraceEntry,
 )
 
 # Skills (folder-based capability packs)
@@ -100,6 +104,10 @@ __all__ = [
     "QuestionOptionEvent",
     "PlanStep",
     "StepEvent",
+    "GraphEdgeSpec",
+    "GraphTopologyEvent",
+    "NodeInvokedEvent",
+    "NodeTraceEntry",
     # Skills
     "Skill",
     "load_skills",

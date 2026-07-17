@@ -6,7 +6,7 @@ without breaking callers.
 """
 
 from abc import abstractmethod
-from typing import Any, AsyncGenerator, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 from sonika_ai_toolkit.agents.base import IBot
 from sonika_ai_toolkit.utilities.types import BotResponse
@@ -64,3 +64,13 @@ class IOrchestratorBot(IBot):
     async def a_prewarm(self) -> None:
         """Pre-warm the TCP/TLS connection to the LLM provider."""
         ...
+
+    # Non-abstract (backward compatible with existing implementers): override
+    # to expose the compiled graph layout for drawing.
+    def get_graph_topology(self) -> Dict[str, Any]:
+        """Static node/edge layout of the compiled graph.
+
+        Returns ``{"entry": str, "nodes": [str], "edges": [{"source",
+        "target", "conditional"}]}``.
+        """
+        raise NotImplementedError

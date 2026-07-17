@@ -12,9 +12,12 @@ Covers:
       BotResponse (needs_input / questions) and in the stream ("questions" event)
 """
 
+import re as _re
+
 from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.outputs import ChatGeneration
+from langchain_core.tools import tool as _lc_tool
 
 from sonika_ai_toolkit.agents.react import ReactBot, _InternalToolLogger
 from sonika_ai_toolkit.tools.ask_user import AskUserQuestionTool
@@ -379,3 +382,115 @@ class TestReactBotSkills:
                        skills_dir=str(tmp_path))
         assert [s.name for s in bot.skills] == ["reportes"]
         assert "Sabes hacer reportes." in bot._skills_prompt
+
+
+# ---------------------------------------------------------------------------
+# ReactBot graph topology + node events (run_id / node_trace)
+# ---------------------------------------------------------------------------
+
+_RUN_ID_RE = _re.compile(r"^\d{8}T\d{12}-[0-9a-f]{32}$")
+
+
+@_lc_tool
+def _echo_tool(x: str) -> str:
+    """Echo the input back."""
+    return f"echo:{x}"
+
+
+def _stream_side_effect(*chunk_lists):
+    """Return a stream side_effect yielding one chunk list per model call."""
+    iters = [list(chunks) for chunks in chunk_lists]
+
+    def _stream(*args, **kwargs):
+        return iter(iters.pop(0) if iters else [AIMessageChunk(content="")])
+
+    return _stream
+
+
+class TestReactBotGraphEvents:
+    """Graph topology, per-node signals and run_id/node_trace in responses."""
+
+    def test_topology_without_tools_only_agent(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        topo = bot.get_graph_topology()
+        assert topo["entry"] == "agent"
+        assert set(topo["nodes"]) == {"__start__", "agent", "__end__"}
+
+    def test_topology_with_tools_has_tools_and_ask_user(self, mock_language_model):
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[_echo_tool])
+        topo = bot.get_graph_topology()
+        assert {"agent", "tools", "ask_user"} <= set(topo["nodes"])
+        for edge in topo["edges"]:
+            assert set(edge) == {"source", "target", "conditional"}
+        assert any(e["source"] == "tools" and e["target"] == "agent"
+                   for e in topo["edges"])
+
+    def test_get_response_carries_run_id_and_node_trace(
+            self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [AIMessageChunk(content="Listo!")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        result = bot.get_response(user_input="Hola")
+        assert _RUN_ID_RE.match(result.run_id)
+        assert [e["node"] for e in result.node_trace] == ["agent"]
+        entry = result.node_trace[0]
+        assert entry["run_id"] == result.run_id
+        assert entry["seq"] == 1
+        assert isinstance(entry["ts"], float)
+
+    def test_run_id_never_repeats(self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [AIMessageChunk(content="a")], [AIMessageChunk(content="b")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        r1 = bot.get_response(user_input="1")
+        r2 = bot.get_response(user_input="2")
+        assert r1.run_id != r2.run_id
+
+    def test_node_trace_records_tool_round_trip(
+            self, mock_language_model, mock_raw_model):
+        tool_chunk = AIMessageChunk(content="")
+        tool_chunk.tool_calls = [
+            {"name": "_echo_tool", "args": {"x": "hola"}, "id": "call_1"}]
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [tool_chunk], [AIMessageChunk(content="Hecho.")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[_echo_tool])
+        result = bot.get_response(user_input="usa la tool")
+        assert [e["node"] for e in result.node_trace] == ["agent", "tools", "agent"]
+        assert [e["seq"] for e in result.node_trace] == [1, 2, 3]
+
+    def test_stream_first_event_is_graph_topology(
+            self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [AIMessageChunk(content="Listo!")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        events = list(bot.stream_response(user_message="Hola", messages=[], logs=[]))
+        assert events[0]["type"] == "graph"
+        assert events[0]["entry"] == "agent"
+        assert "agent" in events[0]["nodes"]
+        assert _RUN_ID_RE.match(events[0]["run_id"])
+
+    def test_stream_emits_node_events_in_order(
+            self, mock_language_model, mock_raw_model):
+        tool_chunk = AIMessageChunk(content="")
+        tool_chunk.tool_calls = [
+            {"name": "_echo_tool", "args": {"x": "hola"}, "id": "call_1"}]
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [tool_chunk], [AIMessageChunk(content="Hecho.")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[_echo_tool])
+        events = list(bot.stream_response(
+            user_message="usa la tool", messages=[], logs=[]))
+
+        node_events = [e for e in events if e["type"] == "node"]
+        assert [e["node"] for e in node_events] == ["agent", "tools", "agent"]
+        assert [e["seq"] for e in node_events] == [1, 2, 3]
+        run_id = events[0]["run_id"]
+        assert all(e["run_id"] == run_id for e in node_events)
+
+        # Existing chunk types still flow, and the final result carries the trace.
+        assert any(e["type"] == "content" for e in events)
+        done = [e for e in events if e["type"] == "done"][0]
+        assert [t["node"] for t in done["result"].node_trace] == ["agent", "tools", "agent"]
+        assert done["result"].run_id == run_id

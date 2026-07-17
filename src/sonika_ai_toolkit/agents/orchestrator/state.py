@@ -16,6 +16,7 @@ class OrchestratorState(TypedDict):
     
     # ── Session & Memory ───────────────────────────────────────────────────
     session_id: str
+    run_id: str  # unique id of this run (one per run/arun/astream_events call)
     skills_dir: str
     thinking: str # Accumulated reasoning
     
@@ -29,3 +30,6 @@ class OrchestratorState(TypedDict):
     # ── Structured plan (only populated when enable_planning=True) ─────────
     plan: List[Dict[str, Any]]  # snapshot of PlanStep dicts (last-write-wins)
     step_events: Annotated[List[Dict[str, Any]], operator.add]
+
+    # ── Node execution trace (one entry per node run, in order) ────────────
+    node_trace: Annotated[List[Dict[str, Any]], operator.add]

@@ -118,6 +118,7 @@ tests/
 │   │       ├── test_graph.py         # agent/tools graph, partial responses
 │   │       ├── test_graph_planning.py # enable_planning: plan snapshot + step events + arun plan
 │   │       ├── test_custom_nodes.py  # custom node validation + wiring (start/after_tools/end)
+│   │       ├── test_node_events.py   # graph topology + node_invoked events + run_id/node_trace
 │   │       ├── test_planning.py      # pure plan helpers (normalize/apply/render/split)
 │   │       ├── test_risk.py          # risk-gate helpers
 │   │       └── test_memory.py        # MemoryManager
@@ -207,6 +208,8 @@ result.success          # bool
 result.plan             # List[dict]
 result.session_id       # Optional[str]
 result.goal             # Optional[str]
+result.run_id           # Optional[str] — unique process id (UTC timestamp + full UUID4, never repeats)
+result.node_trace       # List[dict]  — ordered node executions [{node, run_id, seq, ts}, …]
 ```
 
 ### Stream Event Types (`agents/orchestrator/events.py`)
@@ -226,6 +229,13 @@ update: AgentUpdate = {"final_report": "...", "status_events": [...]}
 
 # ToolsUpdate — payload of "tools" node in "updates" stream mode
 update: ToolsUpdate = {"tools_executed": [...]}
+
+# GraphTopologyEvent — first event of a run: node/edge layout, for drawing the graph
+ev: GraphTopologyEvent = {"type": "graph_topology", "run_id": "...", "entry": "agent",
+                          "nodes": [...], "edges": [{"source", "target", "conditional"}]}
+
+# NodeInvokedEvent — fired once per node execution, in order (animate the path)
+ev: NodeInvokedEvent = {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": 175.0}
 ```
 
 Import these types in consumers instead of hardcoding dict keys.
@@ -265,7 +275,24 @@ Each `run(goal)` call:
 - `async for stream_mode, payload in bot.astream_events(goal, mode="ask")` — streaming with interrupt support
 - `bot.set_resume_command(resume_data)` — provide approval data after an interrupt
 - `await bot.a_prewarm()` — pre-warm TCP/TLS connection
+- `bot.get_graph_topology()` — static node/edge layout of the compiled graph
 - `memory_path` — directory for MEMORY.md and session logs
+
+**Graph topology + node events (both bots):**
+
+Every run gets a unique `run_id` (UTC timestamp + full UUID4 — never repeats).
+All graph nodes are wrapped by `_wrap_node_traced` (react.py) so each execution
+appends to the `node_trace` state channel (`operator.add`). OrchestratorBot's
+`astream_events` yields a third stream mode `"graph"`: first a
+`GraphTopologyEvent` (only when a `goal` starts a new run), then one
+`NodeInvokedEvent` per node execution (synthesized from the `"updates"`
+payloads; `run_id`/`ts` come from the node's `node_trace` delta so they stay
+consistent across interrupt resumes). ReactBot's `stream_response` yields the
+same as `{"type": "graph"}` / `{"type": "node"}` chunks (its graph.stream now
+uses `stream_mode=["updates", "values"]`). Non-streaming (`run`/`arun`/
+`get_response`) return `BotResponse.node_trace` + `BotResponse.run_id`.
+Custom nodes are traced like built-ins. Topology comes from
+`compiled_graph.get_graph()` via `_graph_topology` (react.py).
 
 **Mode parameter:**
 - `"ask"` (default) — pauses on risky tool calls via LangGraph interrupt
@@ -374,6 +401,7 @@ from sonika_ai_toolkit import (
     # Stream event types
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     PlanStep, StepEvent,
+    GraphTopologyEvent, NodeInvokedEvent, GraphEdgeSpec, NodeTraceEntry,
     # Response type
     BotResponse, ILanguageModel,
     # LLM providers

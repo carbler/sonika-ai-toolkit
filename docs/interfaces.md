@@ -59,6 +59,10 @@ from sonika_ai_toolkit import (
     QuestionEvent,         # ask_user interrupt payload
     QuestionItem,          # a single structured question
     QuestionOptionEvent,   # a choice inside a QuestionItem
+    GraphTopologyEvent,    # node/edge layout, first event of a run
+    NodeInvokedEvent,      # signal fired every time a node executes
+    GraphEdgeSpec,         # one edge of the topology
+    NodeTraceEntry,        # one entry of BotResponse.node_trace
 )
 ```
 
@@ -146,6 +150,33 @@ Payload from the `tools` node in `"updates"` stream mode:
     "messages": [...],
     "tools_executed": [{"tool_name": "...", "args": {...}, "status": "success", "output": "..."}],
 }
+```
+
+### GraphTopologyEvent
+
+First event of every run, in the `"graph"` stream mode (OrchestratorBot) or as
+a `{"type": "graph"}` chunk (ReactBot) — the full graph layout, for drawing it
+before any node runs. See
+[Agents — Graph Topology & Node Events](agents.md#graph-topology-node-events-both-bots).
+
+```python
+{
+    "type": "graph_topology",
+    "run_id": "20260717T175049977691-3bf4f982c8bf4a209a9f9459e7cdaa28",
+    "entry": "agent",
+    "nodes": ["__start__", "agent", "tools", "__end__"],
+    "edges": [{"source": "agent", "target": "tools", "conditional": True}, ...],
+}
+```
+
+### NodeInvokedEvent
+
+One per node execution, in order — replay over the topology to animate the
+path the bot took. `run_id` is the unique, never-repeating process id
+(UTC timestamp + full UUID4) shared by all events of the same run.
+
+```python
+{"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": 1752774649.97}
 ```
 
 ## BotResponse

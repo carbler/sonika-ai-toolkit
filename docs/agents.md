@@ -226,6 +226,104 @@ Multiple nodes at the same position chain in list order. Node names must not
 collide with the built-ins (`agent`, `tools`); their state updates stream as
 `("updates", {"<name>": {...}})`.
 
+## Graph Topology & Node Events (both bots)
+
+Both **ReactBot** and **OrchestratorBot** expose the graph they run and signal
+every node execution, so a UI can **draw the graph up front and animate the
+path the bot takes** through it.
+
+Three pieces, same semantics in both bots:
+
+1. **Topology** — `bot.get_graph_topology()` returns the static layout of the
+   compiled graph. The same payload is also the **first stream event** of
+   every run:
+
+   ```python
+   {
+       "entry": "agent",                       # first real node executed
+       "nodes": ["__start__", "agent", "tools", "__end__"],
+       "edges": [
+           {"source": "__start__", "target": "agent", "conditional": False},
+           {"source": "agent", "target": "tools", "conditional": True},
+           {"source": "agent", "target": "__end__", "conditional": True},
+           {"source": "tools", "target": "agent", "conditional": False},
+       ],
+   }
+   ```
+
+   `conditional: True` marks edges taken via a router (the agent's
+   tool-calls decision). Custom nodes (OrchestratorBot) and `ask_user`
+   (ReactBot, when tools exist) appear as regular nodes.
+
+2. **Node signals** — one event per node execution, in order, each carrying
+   the node name, a 1-based `seq`, an epoch `ts`, and the run's `run_id`.
+   Replay them over the topology to paint the steps the bot took.
+
+3. **`run_id` (process id)** — every run (`run` / `arun` / `astream_events` /
+   `get_response` / `stream_response`) gets a **globally unique id that never
+   repeats**: a UTC timestamp (microsecond precision) plus a full UUID4, e.g.
+   `20260717T175049977691-3bf4f982c8bf4a209a9f9459e7cdaa28`. The date prefix
+   makes ids sortable; the untruncated UUID4 makes collisions impossible in
+   practice. The same `run_id` appears in the topology event, every node
+   signal, and the final `BotResponse`.
+
+### OrchestratorBot — the `"graph"` stream mode
+
+`astream_events` yields a third stream mode alongside `"messages"` and
+`"updates"` (existing consumers that filter by mode are unaffected):
+
+```python
+async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
+    if stream_mode == "graph":
+        if payload["type"] == "graph_topology":
+            draw_graph(payload["nodes"], payload["edges"])   # first event
+        elif payload["type"] == "node_invoked":
+            highlight_node(payload["node"])                  # animate the step
+            print(f'#{payload["seq"]} {payload["node"]} @ {payload["ts"]}')
+```
+
+Stream shape of a run that uses one tool:
+
+```python
+("graph", {"type": "graph_topology", "run_id": "...", "entry": "agent",
+           "nodes": [...], "edges": [...]})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 1, "ts": ...})
+("updates", {"agent": {...}})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": ...})
+("updates", {"tools": {...}})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 3, "ts": ...})
+("updates", {"agent": {"final_report": "..."}})
+```
+
+The topology event is emitted only when a `goal` starts a new run (not on
+interrupt resumes); `node_invoked` events keep the original run's `run_id`
+across resumes. The TypedDicts are `GraphTopologyEvent` and
+`NodeInvokedEvent` (importable from `sonika_ai_toolkit`).
+
+### ReactBot — `"graph"` / `"node"` stream chunks
+
+`stream_response` yields the same information as plain dict chunks:
+
+```python
+for ev in bot.stream_response(user_message, messages=[], logs=[]):
+    if ev["type"] == "graph":       # first chunk: topology + run_id
+        draw_graph(ev["nodes"], ev["edges"])
+    elif ev["type"] == "node":      # one per node execution
+        highlight_node(ev["node"])  # ev["seq"], ev["ts"], ev["run_id"]
+```
+
+### Non-streaming: `BotResponse.node_trace`
+
+`run` / `arun` / `get_response` return the recorded path in the response:
+
+```python
+result = bot.get_response("usa la tool")   # or await orchestrator.arun(goal)
+result.run_id       # "20260717T175052294436-1375b198..."
+result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...},
+                    #  {"node": "tools", "seq": 2, ...},
+                    #  {"node": "agent", "seq": 3, ...}]
+```
+
 ## BotResponse
 
 All agents return `BotResponse`, a `dict` subclass with typed properties:
@@ -249,6 +347,8 @@ result.session_id       # Optional[str]
 result.goal             # Optional[str]
 result.questions        # List[dict]  — structured questions the agent asks
 result.needs_input      # bool        — True when waiting for answers
+result.run_id           # Optional[str] — unique process id (never repeats)
+result.node_trace       # List[dict]  — ordered node executions {node, seq, ts, run_id}
 ```
 
 ## Structured User Questions (`ask_user`)
