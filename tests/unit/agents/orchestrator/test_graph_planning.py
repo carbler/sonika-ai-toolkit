@@ -95,8 +95,8 @@ class TestPlanEmission:
         bot = _make_bot(_planning_model(), tools=[_make_tool()], enable_planning=True)
         node_updates = await self._collect(bot)
 
-        plans = [u.get("plan") for n, u in node_updates if n == "agent" and u and u.get("plan")]
-        assert plans, "no agent update carried a plan snapshot"
+        plans = [u.get("plan") for n, u in node_updates if n == "plan" and u and u.get("plan")]
+        assert plans, "no plan-node update carried a plan snapshot"
         first_plan = plans[0]
         assert [s["description"] for s in first_plan] == ["Buscar datos", "Generar reporte"]
         assert all(s["status"] == "pending" for s in first_plan)
@@ -107,7 +107,7 @@ class TestPlanEmission:
 
         running_idx = done_idx = tools_idx = None
         for i, (node, update) in enumerate(node_updates):
-            if node == "agent" and update:
+            if node == "plan" and update:
                 for ev in update.get("step_events", []) or []:
                     if ev["status"] == "running" and running_idx is None:
                         running_idx = i

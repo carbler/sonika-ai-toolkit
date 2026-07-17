@@ -209,7 +209,7 @@ result.plan             # List[dict]
 result.session_id       # Optional[str]
 result.goal             # Optional[str]
 result.run_id           # Optional[str] — unique process id (UTC timestamp + full UUID4, never repeats)
-result.node_trace       # List[dict]  — ordered node executions [{node, run_id, seq, ts}, …]
+result.node_trace       # List[dict]  — ordered node executions [{node, run_id, seq, ts, detail}, …]
 ```
 
 ### Stream Event Types (`agents/orchestrator/events.py`)
@@ -235,7 +235,8 @@ ev: GraphTopologyEvent = {"type": "graph_topology", "run_id": "...", "entry": "a
                           "nodes": [...], "edges": [{"source", "target", "conditional"}]}
 
 # NodeInvokedEvent — fired once per node execution, in order (animate the path)
-ev: NodeInvokedEvent = {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": 175.0}
+ev: NodeInvokedEvent = {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": 175.0,
+                        "detail": {"tools_executed": [{"tool_name": "...", "args": {...}, "status": "success", "output": "..."}]}}
 ```
 
 Import these types in consumers instead of hardcoding dict keys.
@@ -255,19 +256,24 @@ Two architectures for different use cases:
 
 ### OrchestratorBot — How it works
 
-The orchestrator runs a **compact ReAct loop** compiled as a LangGraph state machine:
+The orchestrator runs a **compact ReAct loop** compiled as a LangGraph state
+machine. Two always-present nodes plus two opt-in nodes:
 
 ```
-agent_node ──(tool_calls?)──► tools_node ──► agent_node
-     │                                              │
-     └─────────────── (no tool calls) ─────────── END
+agent ──(plan signals?)──► plan ──┐ (enable_planning=True)
+  │                          │    └─(no real calls)─► agent
+  ├──(ask_user?)──► ask_user ◄┘ (enable_user_questions=True) ─► agent
+  ├──(real tool_calls?)──► tools ──► agent
+  └──(no tool calls)──► END
 ```
 
 Each `run(goal)` call:
 
-1. **`agent_node`** — streams the LLM response via `astream`, accumulates tool calls and thinking content. A tenacity retry decorator wraps the stream call; on 429/rate-limit it waits exponentially (up to 5 attempts) and emits `StatusEvent` objects into `state["status_events"]` so consumers can show progress.
-2. **`tools_node`** — iterates tool calls; if `mode="ask"` and `tool.risk_level > 0`, fires a **native LangGraph interrupt** and waits for `set_resume_command()` before executing.
-3. Loop continues until the model stops calling tools, then final text is stored as `final_report`.
+1. **`agent_node`** — streams the LLM response via `astream`, accumulates tool calls and thinking content. A tenacity retry decorator wraps the stream call; on 429/rate-limit it waits exponentially (up to 5 attempts) and emits `StatusEvent` objects into `state["status_events"]` so consumers can show progress. Routing (`should_continue`): plan signals → `plan`, ask_user call → `ask_user`, real calls → `tools`, none → END.
+2. **`plan` node** (opt-in) — answers `set_plan`/`update_step` with acknowledgment ToolMessages and applies them to the plan snapshot; then routes remaining real calls to `tools`/`ask_user`, or straight back to `agent`.
+3. **`ask_user` node** (opt-in) — fires the **question_request interrupt** and waits for `set_resume_command()`; asking wins: real calls in the same batch get a deferred ToolMessage (never executed). The interrupt is the node's first side effect, so resuming re-executes nothing else.
+4. **`tools_node`** — iterates the real tool calls (finds the batch via `_last_tool_call_message` — after plan/ask_user, `messages[-1]` is a ToolMessage); if `mode="ask"` and `tool.risk_level > 0`, fires a **native LangGraph interrupt** and waits for `set_resume_command()` before executing. Skips plan-signal calls (already answered by `plan`).
+5. Loop continues until the model stops calling tools, then final text is stored as `final_report`.
 
 **Key APIs:**
 - `bot.run(goal, context="")` — synchronous (wraps `arun`)
@@ -286,8 +292,12 @@ appends to the `node_trace` state channel (`operator.add`). OrchestratorBot's
 `astream_events` yields a third stream mode `"graph"`: first a
 `GraphTopologyEvent` (only when a `goal` starts a new run), then one
 `NodeInvokedEvent` per node execution (synthesized from the `"updates"`
-payloads; `run_id`/`ts` come from the node's `node_trace` delta so they stay
-consistent across interrupt resumes). ReactBot's `stream_response` yields the
+payloads; `run_id`/`ts`/`detail` come from the node's `node_trace` delta so
+they stay consistent across interrupt resumes). Each event carries a `detail`
+(`NodeDetail`) with the node's params/output — `tool_calls` (name+args
+requested), `tools_executed` (args + truncated output), `output` (text),
+`plan`/`step_events`/`questions` — built generically from the node's state
+delta by `_node_detail` (react.py). ReactBot's `stream_response` yields the
 same as `{"type": "graph"}` / `{"type": "node"}` chunks (its graph.stream now
 uses `stream_mode=["updates", "values"]`). Non-streaming (`run`/`arun`/
 `get_response`) return `BotResponse.node_trace` + `BotResponse.run_id`.
@@ -301,30 +311,32 @@ Custom nodes are traced like built-ins. Topology comes from
 
 **Structured plan + step progress (`enable_planning=True`, opt-in):**
 
-There is no separate "plan node" — the graph is always just `agent ⇄ tools`.
-Planning is a conditional *behavior* of `agent_node`, active only when (1)
-`enable_planning=True` at construction, (2) `mode != "plan"`, and (3) the
-model itself chooses to call the signal tools (never forced by the graph).
-Registers two internal *signal* tools (`set_plan`, `update_step` in
-`tools/plan_tools.py`) and appends a planning protocol to the system prompt
-(`orchestrator/planning.py`). `agent_node` tracks these calls and emits state
-deltas that surface in the `"updates"` stream: `{"agent": {"plan": [PlanStep,
-...]}}` and `{"agent": {"step_events": [StepEvent, ...]}}`. The calls stay in
-the message: `tools_node` answers them with a no-op acknowledgment ToolMessage
-(excluded from `tools_executed`) so the history remains a normal tool
-round-trip — models return empty when the conversation ends on a bare AI
-message, so do NOT strip the calls. `run`/`arun` return the final snapshot in
-`BotResponse.plan`. With `enable_planning=False` (default) the behavior and
-stream payloads are byte-identical to before. Text-only `mode="plan"` is
-unaffected (planning protocol not appended there).
+Planning runs through a **dedicated `plan` node**, added to the graph only
+when `enable_planning=True`. It activates only when (1) `enable_planning=True`
+at construction, (2) `mode != "plan"`, and (3) the model itself chooses to
+call the signal tools (never forced by the graph). Registers two internal
+*signal* tools (`set_plan`, `update_step` in `tools/plan_tools.py`) and
+appends a planning protocol to the system prompt (`orchestrator/planning.py`).
+The router sends batches containing signal calls to the `plan` node, which
+applies them and emits state deltas that surface in the `"updates"` stream:
+`{"plan": {"plan": [PlanStep, ...]}}` and `{"plan": {"step_events":
+[StepEvent, ...]}}` (up to v0.3.14 these streamed under `"agent"`). The calls
+stay in the message: the `plan` node answers them with a no-op acknowledgment
+ToolMessage (excluded from `tools_executed`) so the history remains a normal
+tool round-trip — models return empty when the conversation ends on a bare AI
+message, so do NOT strip the calls; `tools_node` skips them. `run`/`arun`
+return the final snapshot in `BotResponse.plan`. With
+`enable_planning=False` (default) the node does not exist and stream payloads
+are unchanged. Text-only `mode="plan"` is unaffected (planning protocol not
+appended there).
 
 **Custom nodes (`custom_nodes=[CustomNode(...)]`):**
 
 `CustomNode(name, node, position)` from `agents/extensions.py` injects
 consumer LangGraph nodes at `"start"` (entry → agent, once), `"after_tools"`
 (tools → agent edge, every loop) or `"end"` (agent final turn → END). Names
-`agent`/`tools` are reserved; multiple nodes at one position chain in list
-order; updates stream under the node's own name.
+`agent`/`tools`/`plan`/`ask_user` are reserved; multiple nodes at one position
+chain in list order; updates stream under the node's own name.
 
 **Skills (both bots — `skills=[Skill, ...]` and/or `skills_dir="./skills"`):**
 
@@ -401,7 +413,7 @@ from sonika_ai_toolkit import (
     # Stream event types
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     PlanStep, StepEvent,
-    GraphTopologyEvent, NodeInvokedEvent, GraphEdgeSpec, NodeTraceEntry,
+    GraphTopologyEvent, NodeInvokedEvent, GraphEdgeSpec, NodeTraceEntry, NodeDetail,
     # Response type
     BotResponse, ILanguageModel,
     # LLM providers

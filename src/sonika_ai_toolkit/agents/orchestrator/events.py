@@ -84,18 +84,39 @@ class GraphTopologyEvent(TypedDict):
     edges: List[GraphEdgeSpec]
 
 
+class NodeDetail(TypedDict, total=False):
+    """Params/output summary of one node execution (all keys optional).
+
+    Carried by ``NodeInvokedEvent.detail`` and ``NodeTraceEntry.detail``:
+      tool_calls     — tools the node's message requests: [{name, args}, …]
+      tools_executed — tools actually run: [{tool_name, args, status, output}, …]
+      output         — text the node emitted (truncated to 500 chars)
+      plan           — plan snapshot after this node (plan node)
+      step_events    — step transitions of this node (plan node)
+      questions      — structured questions raised (ask_user node, ReactBot)
+    """
+    tool_calls: List[Dict[str, Any]]
+    tools_executed: List[Dict[str, Any]]
+    output: str
+    plan: List[Dict[str, Any]]
+    step_events: List[Dict[str, Any]]
+    questions: List[Dict[str, Any]]
+
+
 class NodeInvokedEvent(TypedDict):
     """A signal that one graph node just executed.
 
     Emitted as ``("graph", payload)`` (OrchestratorBot) / ``{"type": "node"}``
     (ReactBot) once per node execution, in order — replay them over the
-    topology to animate the path the bot took.
+    topology to animate the path the bot took. ``detail`` carries the node's
+    params/output summary.
     """
     type: Literal["node_invoked"]
     run_id: str
-    node: str          # node name ("agent", "tools", custom node names, …)
+    node: str          # node name ("agent", "tools", "plan", "ask_user", custom, …)
     seq: int           # 1-based execution order within the run
     ts: float          # epoch seconds when the node finished
+    detail: NodeDetail
 
 
 class NodeTraceEntry(TypedDict):
@@ -104,6 +125,7 @@ class NodeTraceEntry(TypedDict):
     run_id: str
     seq: int
     ts: float
+    detail: NodeDetail
 
 
 class ToolRecord(TypedDict):

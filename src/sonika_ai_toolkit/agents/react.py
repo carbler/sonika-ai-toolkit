@@ -135,14 +135,62 @@ def extract_thinking(response: AIMessage) -> Optional[str]:
     return None
 
 
+_DETAIL_TRUNC = 500  # chars kept for outputs inside node detail payloads
+
+
+def _node_detail(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact params/output summary of a node execution, from its state delta.
+
+    Keys (present only when applicable):
+      tool_calls     — tools the node's message requests: [{name, args}, …]
+      tools_executed — tools actually run: [{tool_name, args, status, output}, …]
+      output         — text emitted by the node (truncated)
+      plan / step_events / questions — planning + ask_user metadata
+    """
+    detail: Dict[str, Any] = {}
+    tool_calls: List[Dict[str, Any]] = []
+    texts: List[str] = []
+    for msg in result.get("messages") or []:
+        for tc in getattr(msg, "tool_calls", None) or []:
+            tool_calls.append({"name": tc.get("name"), "args": tc.get("args")})
+        content = getattr(msg, "content", None)
+        text = _get_text_content(content) if content else ""
+        if text:
+            texts.append(text)
+    if tool_calls:
+        detail["tool_calls"] = tool_calls
+    if result.get("tools_executed"):
+        detail["tools_executed"] = [
+            {
+                "tool_name": t.get("tool_name"),
+                "args": t.get("args"),
+                "status": t.get("status"),
+                "output": str(t.get("output", ""))[:_DETAIL_TRUNC],
+            }
+            for t in result["tools_executed"]
+        ]
+    if texts:
+        detail["output"] = "\n".join(texts)[:_DETAIL_TRUNC]
+    if result.get("plan"):
+        detail["plan"] = result["plan"]
+    if result.get("step_events"):
+        detail["step_events"] = result["step_events"]
+    pending = result.get("pending_questions")
+    if pending and pending.get("questions"):
+        detail["questions"] = pending["questions"]
+    return detail
+
+
 def _wrap_node_traced(name: str, fn: Callable) -> Callable:
     """Wrap a graph node so every execution appends a node-trace entry.
 
-    The entry ``{"node", "run_id", "ts"}`` rides in the node's own state delta
-    under ``node_trace`` (an ``operator.add`` channel), so it surfaces both in
-    the ``updates`` stream and in the final state. Works with sync and async
-    node callables. If the node returns a full state (instead of a delta) any
-    pre-existing ``node_trace`` key is replaced, never re-added.
+    The entry ``{"node", "run_id", "ts", "detail"}`` — ``detail`` carries the
+    node's params/output summary (see ``_node_detail``) — rides in the node's
+    own state delta under ``node_trace`` (an ``operator.add`` channel), so it
+    surfaces both in the ``updates`` stream and in the final state. Works with
+    sync and async node callables. If the node returns a full state (instead
+    of a delta) any pre-existing ``node_trace`` key is replaced, never
+    re-added.
     """
     def _annotate(state, result):
         if isinstance(result, dict):
@@ -150,6 +198,7 @@ def _wrap_node_traced(name: str, fn: Callable) -> Callable:
                 "node": name,
                 "run_id": state.get("run_id", ""),
                 "ts": time.time(),
+                "detail": _node_detail(result),
             }
             result = {**result, "node_trace": [entry]}
         return result
@@ -1042,8 +1091,10 @@ class ReactBot(IConversationBot):
         Yields dicts with one of the following shapes:
             {"type": "graph", "run_id": str, "entry": str, "nodes": list, "edges": list}
                 — first event: full graph topology (nodes/edges) for drawing
-            {"type": "node", "run_id": str, "node": str, "seq": int, "ts": float}
-                — one graph node just executed (fires once per node run, in order)
+            {"type": "node", "run_id": str, "node": str, "seq": int, "ts": float,
+             "detail": {tool_calls, tools_executed, output, questions, …}}
+                — one graph node just executed (fires once per node run, in order,
+                  with the node's params/output summary in "detail")
             {"type": "thinking", "chunk": str}   — reasoning token (real-time for native models)
             {"type": "tool_call", "chunk": str}  — tool call being dispatched
             {"type": "content",  "chunk": str}   — response text token
@@ -1107,6 +1158,7 @@ class ReactBot(IConversationBot):
                             "node": node_name,
                             "seq": node_seq,
                             "ts": trace[-1].get("ts", time.time()),
+                            "detail": trace[-1].get("detail", {}),
                         }
                     continue
 

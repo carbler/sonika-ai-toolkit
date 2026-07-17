@@ -32,32 +32,44 @@ Autonomous ReAct-based orchestration with persistent memory, LangGraph native in
 
 ### How the Graph Works
 
-The compiled graph has exactly **two built-in nodes** — `agent` and `tools` —
-wired as a loop:
+The compiled graph has **two always-present nodes** — `agent` and `tools` —
+wired as a loop, plus **two opt-in nodes** that appear when their feature is
+enabled: `plan` (with `enable_planning=True`) and `ask_user` (with
+`enable_user_questions=True`):
 
 ```
-        ┌─────────┐   tool_calls?    ┌─────────┐
- START ─▶  agent   ├─────────────────▶  tools   │
-        └────┬────┘                  └────┬────┘
-             │  no tool_calls              │
-             ▼                             │
-            END  ◀─────────────────────────┘
-                     (back to agent)
+        ┌─────────┐  plan signals?   ┌─────────┐
+ START ─▶  agent   ├─────────────────▶  plan    │ (enable_planning=True)
+        └────┬────┘                  └──┬──┬──┬─┘
+             │ ask_user?   ┌────────────┘  │  │ no real calls
+             ├─────────────▼──┐            │  └──────────► back to agent
+             │           ask_user ◄────────┘ ask_user?
+             │  (enable_user_ │
+             │  questions)    └──────────► back to agent (after answers)
+             │ real tool_calls    ┌─────────┐
+             ├────────────────────▶  tools   ├──► back to agent
+             │  no tool_calls     └─────────┘
+             ▼
+            END
 ```
 
 - **`agent`** builds the system prompt (instructions + memory + skills +
-  mode-specific text), calls the LLM, and decides what happened: if the
-  response has tool calls it hands off to `tools`; otherwise the text becomes
-  `final_report` and the run ends.
-- **`tools`** executes every tool call from the last agent turn — real tools,
-  `ask_user` (pauses via a native interrupt), and, when planning is on, the
-  `set_plan`/`update_step` signal tools (acknowledged, not executed) — then
-  loops back to `agent` with the results.
+  mode-specific text), calls the LLM, and routes: plan-signal calls go to
+  `plan` first, an `ask_user` call goes to `ask_user`, real tool calls go to
+  `tools`, and no calls at all ends the run (text becomes `final_report`).
+- **`plan`** (opt-in) answers the `set_plan`/`update_step` signal calls with
+  acknowledgment ToolMessages and applies them to the plan snapshot; its
+  state updates stream as `("updates", {"plan": {...}})`. Real calls in the
+  same batch continue to `tools` (or `ask_user`) afterwards.
+- **`ask_user`** (opt-in) pauses via a native LangGraph interrupt and waits
+  for `set_resume_command()`. Asking wins: any real tool call in the same
+  batch is answered with a deferred ToolMessage (never executed) so the model
+  re-issues it with the user's answers in hand.
+- **`tools`** executes the real tool calls — including `mode="ask"` risk
+  interrupts — then loops back to `agent` with the results.
 
-There is **no dedicated "plan node"**. Planning is a conditional *behavior*
-of the `agent` node itself (see below) — the graph topology never changes
-because of it. `custom_nodes` (further down) are the only way to add real
-extra nodes to this loop.
+With both features off the topology is exactly the classic two-node ReAct
+loop. `custom_nodes` (further down) can add more nodes to this loop.
 
 ### Sync Usage
 
@@ -144,19 +156,19 @@ and the graph behaves exactly as if planning didn't exist:
    plan unnecessary. Multi-step goals are what the protocol prompt asks the
    model to plan for.
 
-**How it flows through the graph** (no dedicated node — all inside `agent`):
+**How it flows through the graph** (via the dedicated `plan` node, added to
+the topology only when `enable_planning=True`):
 
 1. `agent` runs with the planning protocol + current plan snapshot in the
    prompt. The model calls `set_plan(steps=[...])`, alone or alongside real
    tool calls for the first step.
-2. `agent` intercepts that call *before* storing the message: it builds the
-   `plan` snapshot (all steps `"pending"`) and puts it in this turn's state
-   update — the call itself stays in the message.
-3. Because the message still has tool calls, `should_continue` routes to
-   `tools`. There, `set_plan`/`update_step` get a no-op acknowledgment
-   ToolMessage (so the conversation stays a normal tool round-trip) and are
-   **excluded from `tools_executed`** — they performed no real action. Any
-   real tool calls in the same turn execute normally.
+2. The router sends the batch to the **`plan` node** first. It applies the
+   signal calls to the plan snapshot (all steps `"pending"` after `set_plan`)
+   and answers them with acknowledgment ToolMessages (so the conversation
+   stays a normal tool round-trip). Signal calls are **excluded from
+   `tools_executed`** — they performed no real action.
+3. From `plan`, any real tool calls in the same batch continue to `tools`
+   (or `ask_user`); with none, the flow returns straight to `agent`.
 4. Back in `agent`, the updated plan snapshot renders into the prompt so the
    model sees step 1 is already registered and doesn't re-announce it. The
    model now calls `update_step(1, "running")` alongside the real tool(s) for
@@ -164,7 +176,8 @@ and the graph behaves exactly as if planning didn't exist:
    so on until all steps are done and the model returns final text with no
    more tool calls — ending the run at `agent` as usual.
 
-Each of these turns surfaces through the `"updates"` stream:
+Each plan-node run surfaces through the `"updates"` stream **under the
+`"plan"` node name** (and as `"plan"` node events in the `"graph"` stream):
 
 ```python
 bot = OrchestratorBot(..., enable_planning=True)
@@ -172,7 +185,7 @@ bot = OrchestratorBot(..., enable_planning=True)
 async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
     if stream_mode == "updates":
         for node, update in payload.items():
-            if node == "agent":
+            if node == "plan":
                 if update.get("plan"):
                     for s in update["plan"]:
                         print(f'{s["step"]}. [{s["status"]}] {s["description"]}')
@@ -183,14 +196,20 @@ async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
 Stream shape:
 
 ```python
-("updates", {"agent": {"plan": [
+("updates", {"agent": {...}})              # model called set_plan
+("updates", {"plan": {"plan": [
     {"step": 1, "description": "Buscar datos", "status": "pending"},
     {"step": 2, "description": "Generar reporte", "status": "pending"},
 ]}})
-("updates", {"agent": {"step_events": [{"step": 1, "status": "running"}]}})
+("updates", {"agent": {...}})              # model called update_step + real tool
+("updates", {"plan": {"plan": [...], "step_events": [{"step": 1, "status": "running"}]}})
 ("updates", {"tools": {...}})
-("updates", {"agent": {"step_events": [{"step": 1, "status": "done"}]}})
+("updates", {"plan": {"plan": [...], "step_events": [{"step": 1, "status": "done"}]}})
 ```
+
+> Migration note: in releases up to v0.3.14 the plan snapshot and step events
+> streamed under the `"agent"` update. They now stream under the dedicated
+> `"plan"` node.
 
 Non-streaming callers get the final snapshot in `result.plan` (from
 `run`/`arun`), with each step's final status. The feature is **opt-in**: with
@@ -223,8 +242,8 @@ Positions:
 | `"end"` | After the agent's final turn, before END (once per run) |
 
 Multiple nodes at the same position chain in list order. Node names must not
-collide with the built-ins (`agent`, `tools`); their state updates stream as
-`("updates", {"<name>": {...}})`.
+collide with the built-ins (`agent`, `tools`, `plan`, `ask_user`); their
+state updates stream as `("updates", {"<name>": {...}})`.
 
 ## Graph Topology & Node Events (both bots)
 
@@ -252,12 +271,30 @@ Three pieces, same semantics in both bots:
    ```
 
    `conditional: True` marks edges taken via a router (the agent's
-   tool-calls decision). Custom nodes (OrchestratorBot) and `ask_user`
-   (ReactBot, when tools exist) appear as regular nodes.
+   tool-calls decision). Custom nodes, `plan` (`enable_planning=True`) and
+   `ask_user` (`enable_user_questions=True`) appear as regular nodes.
 
 2. **Node signals** — one event per node execution, in order, each carrying
-   the node name, a 1-based `seq`, an epoch `ts`, and the run's `run_id`.
-   Replay them over the topology to paint the steps the bot took.
+   the node name, a 1-based `seq`, an epoch `ts`, the run's `run_id`, and a
+   **`detail`** payload with the node's params and output
+   (`NodeDetail`, all keys optional):
+
+   ```python
+   {
+       "tool_calls":     [{"name": "get_datetime", "args": {"tz": "local"}}],
+       "tools_executed": [{"tool_name": "get_datetime", "args": {...},
+                           "status": "success", "output": "14:44"}],
+       "output":         "text the node emitted (truncated to 500 chars)",
+       "plan":           [...],   # plan node: snapshot after this run
+       "step_events":    [...],   # plan node: transitions of this run
+       "questions":      [...],   # ask_user (ReactBot): questions raised
+   }
+   ```
+
+   For `agent`, `tool_calls` are the tools it *requested* (with args) and
+   `output` the text it emitted; for `tools`, `tools_executed` carries the
+   args and (truncated) output of every executed tool. Replay the signals
+   over the topology to paint the steps the bot took, with their data.
 
 3. **`run_id` (process id)** — every run (`run` / `arun` / `astream_events` /
    `get_response` / `stream_response`) gets a **globally unique id that never
@@ -279,7 +316,7 @@ async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
             draw_graph(payload["nodes"], payload["edges"])   # first event
         elif payload["type"] == "node_invoked":
             highlight_node(payload["node"])                  # animate the step
-            print(f'#{payload["seq"]} {payload["node"]} @ {payload["ts"]}')
+            print(f'#{payload["seq"]} {payload["node"]}: {payload["detail"]}')
 ```
 
 Stream shape of a run that uses one tool:
@@ -287,11 +324,15 @@ Stream shape of a run that uses one tool:
 ```python
 ("graph", {"type": "graph_topology", "run_id": "...", "entry": "agent",
            "nodes": [...], "edges": [...]})
-("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 1, "ts": ...})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 1, "ts": ...,
+           "detail": {"tool_calls": [{"name": "get_datetime", "args": {...}}]}})
 ("updates", {"agent": {...}})
-("graph", {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": ...})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": ...,
+           "detail": {"tools_executed": [{"tool_name": "get_datetime", "args": {...},
+                                          "status": "success", "output": "14:44"}]}})
 ("updates", {"tools": {...}})
-("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 3, "ts": ...})
+("graph", {"type": "node_invoked", "run_id": "...", "node": "agent", "seq": 3, "ts": ...,
+           "detail": {"output": "La hora actual es 14:44."}})
 ("updates", {"agent": {"final_report": "..."}})
 ```
 
@@ -310,6 +351,7 @@ for ev in bot.stream_response(user_message, messages=[], logs=[]):
         draw_graph(ev["nodes"], ev["edges"])
     elif ev["type"] == "node":      # one per node execution
         highlight_node(ev["node"])  # ev["seq"], ev["ts"], ev["run_id"]
+        print(ev["detail"])         # params/output of this node run
 ```
 
 ### Non-streaming: `BotResponse.node_trace`
@@ -319,9 +361,11 @@ for ev in bot.stream_response(user_message, messages=[], logs=[]):
 ```python
 result = bot.get_response("usa la tool")   # or await orchestrator.arun(goal)
 result.run_id       # "20260717T175052294436-1375b198..."
-result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...},
-                    #  {"node": "tools", "seq": 2, ...},
-                    #  {"node": "agent", "seq": 3, ...}]
+result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...,
+                    #   "detail": {"tool_calls": [{"name": "...", "args": {...}}]}},
+                    #  {"node": "tools", "seq": 2, ...,
+                    #   "detail": {"tools_executed": [{..., "output": "..."}]}},
+                    #  {"node": "agent", "seq": 3, ..., "detail": {"output": "..."}}]
 ```
 
 ## BotResponse
@@ -408,8 +452,13 @@ for event in bot.stream_response(user_message="...", messages=[], logs=[]):
 
 ### OrchestratorBot — stateful (pauses via interrupt, resumes the *same* run)
 
-The orchestrator reuses the native LangGraph interrupt, so it keeps all context
-and continues where it left off once you provide the answers.
+With `enable_user_questions=True` the questions run through a **dedicated
+`ask_user` graph node** (visible in the topology and in the `"graph"` node
+events). It fires a native LangGraph interrupt, so the run keeps all context
+and continues where it left off once you provide the answers. Asking wins
+over other tool calls in the same batch: those are answered with a deferred
+ToolMessage (never executed) and the model re-issues them after the answers
+arrive.
 
 ```python
 from sonika_ai_toolkit import OrchestratorBot

@@ -61,6 +61,7 @@ from sonika_ai_toolkit import (
     QuestionOptionEvent,   # a choice inside a QuestionItem
     GraphTopologyEvent,    # node/edge layout, first event of a run
     NodeInvokedEvent,      # signal fired every time a node executes
+    NodeDetail,            # params/output summary inside a node event
     GraphEdgeSpec,         # one edge of the topology
     NodeTraceEntry,        # one entry of BotResponse.node_trace
 )
@@ -173,10 +174,34 @@ before any node runs. See
 
 One per node execution, in order — replay over the topology to animate the
 path the bot took. `run_id` is the unique, never-repeating process id
-(UTC timestamp + full UUID4) shared by all events of the same run.
+(UTC timestamp + full UUID4) shared by all events of the same run. `detail`
+carries the node's params/output summary.
 
 ```python
-{"type": "node_invoked", "run_id": "...", "node": "tools", "seq": 2, "ts": 1752774649.97}
+{
+    "type": "node_invoked", "run_id": "...", "node": "tools",
+    "seq": 2, "ts": 1752774649.97,
+    "detail": {"tools_executed": [
+        {"tool_name": "get_datetime", "args": {"tz": "local"},
+         "status": "success", "output": "14:44"},
+    ]},
+}
+```
+
+### NodeDetail
+
+Params/output summary inside `NodeInvokedEvent.detail` and
+`NodeTraceEntry.detail` — all keys optional:
+
+```python
+{
+    "tool_calls":     [{"name": "...", "args": {...}}],  # tools the node requested
+    "tools_executed": [{"tool_name", "args", "status", "output"}],  # tools it ran
+    "output":         "text the node emitted (truncated to 500 chars)",
+    "plan":           [...],   # plan node: snapshot after this run
+    "step_events":    [...],   # plan node: step transitions of this run
+    "questions":      [...],   # ask_user node (ReactBot): questions raised
+}
 ```
 
 ## BotResponse

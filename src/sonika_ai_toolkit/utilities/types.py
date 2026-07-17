@@ -72,7 +72,7 @@ class BotResponse(dict):
 
     @property
     def node_trace(self) -> List[Dict[str, Any]]:
-        """Ordered record of graph-node executions: [{node, run_id, seq, ts}, …]."""
+        """Ordered graph-node executions: [{node, run_id, seq, ts, detail}, …]."""
         return self.get("node_trace", [])
 
     # ── OrchestratorBot extras ──────────────────────────────────────────────

@@ -494,3 +494,50 @@ class TestReactBotGraphEvents:
         done = [e for e in events if e["type"] == "done"][0]
         assert [t["node"] for t in done["result"].node_trace] == ["agent", "tools", "agent"]
         assert done["result"].run_id == run_id
+
+
+class TestReactBotNodeDetail:
+    """Node events and node_trace carry params/output in `detail`."""
+
+    def test_stream_node_events_carry_detail(self, mock_language_model, mock_raw_model):
+        tool_chunk = AIMessageChunk(content="")
+        tool_chunk.tool_calls = [
+            {"name": "_echo_tool", "args": {"x": "hola"}, "id": "call_1"}]
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [tool_chunk], [AIMessageChunk(content="Hecho.")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[_echo_tool])
+        events = list(bot.stream_response(
+            user_message="usa la tool", messages=[], logs=[]))
+        node_events = {e["seq"]: e for e in events if e["type"] == "node"}
+
+        # agent (seq 1): requested the tool with its args
+        assert node_events[1]["detail"]["tool_calls"] == [
+            {"name": "_echo_tool", "args": {"x": "hola"}}]
+        # tools (seq 2): executed output visible
+        assert "echo:hola" in node_events[2]["detail"]["output"]
+        # final agent (seq 3): emitted text
+        assert node_events[3]["detail"]["output"] == "Hecho."
+
+    def test_get_response_node_trace_carries_detail(
+            self, mock_language_model, mock_raw_model):
+        tool_chunk = AIMessageChunk(content="")
+        tool_chunk.tool_calls = [
+            {"name": "_echo_tool", "args": {"x": "hola"}, "id": "call_1"}]
+        mock_raw_model.stream.side_effect = _stream_side_effect(
+            [tool_chunk], [AIMessageChunk(content="Hecho.")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       tools=[_echo_tool])
+        result = bot.get_response(user_input="usa la tool")
+        details = {e["node"]: e["detail"] for e in result.node_trace}
+        assert details["agent"]  # at least tool_calls or output present
+        assert "echo:hola" in details["tools"]["output"]
+
+    def test_ask_user_node_detail_has_questions(
+            self, mock_language_model, mock_raw_model):
+        _model_that_asks(mock_raw_model)
+        bot = ReactBot(language_model=mock_language_model, instructions="x",
+                       enable_user_questions=True)
+        result = bot.get_response(user_input="Quiero algo")
+        ask_entry = next(e for e in result.node_trace if e["node"] == "ask_user")
+        assert ask_entry["detail"]["questions"][0]["id"] == "color"

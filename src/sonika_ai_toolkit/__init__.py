@@ -23,6 +23,7 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     GraphTopologyEvent,
     NodeInvokedEvent,
     NodeTraceEntry,
+    NodeDetail,
 )
 
 # Skills (folder-based capability packs)
@@ -108,6 +109,7 @@ __all__ = [
     "GraphTopologyEvent",
     "NodeInvokedEvent",
     "NodeTraceEntry",
+    "NodeDetail",
     # Skills
     "Skill",
     "load_skills",

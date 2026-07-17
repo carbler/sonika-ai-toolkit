@@ -86,6 +86,19 @@ def _extract_text_content(response) -> str:
     return str(text).strip()
 
 
+def _last_tool_call_message(messages) -> Optional[AIMessage]:
+    """Return the most recent AIMessage that carries tool_calls.
+
+    After the ``plan``/``ask_user`` nodes append their ToolMessage answers,
+    ``messages[-1]`` is no longer the AIMessage that requested the batch —
+    walk backwards to find it.
+    """
+    for msg in reversed(messages or []):
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            return msg
+    return None
+
+
 class OrchestratorBot(IOrchestratorBot):
     """
     Fast, Singleton, ReAct-based Orchestrator with native LangGraph interrupts.
@@ -171,7 +184,7 @@ class OrchestratorBot(IOrchestratorBot):
                     self.tools.append(plan_tool)
 
         self.custom_nodes = validate_custom_nodes(
-            custom_nodes, reserved_names={"agent", "tools"}
+            custom_nodes, reserved_names={"agent", "tools", "plan", "ask_user"}
         )
 
         self.model_with_tools = self.model.model.bind_tools(self.tools) if self.tools else self.model.model
@@ -282,28 +295,6 @@ class OrchestratorBot(IOrchestratorBot):
                     additional_kwargs=getattr(accumulated_chunk, "additional_kwargs", {}),
                 )
 
-            # Track plan signal tools (set_plan / update_step): apply them to the
-            # graph state so this agent update carries `plan` / `step_events`.
-            # The calls stay in the message — tools_node acknowledges them with a
-            # no-op ToolMessage so the history remains a normal tool round-trip
-            # (models misbehave when the conversation ends on a bare AI message).
-            plan_updates: Dict[str, Any] = {}
-            if self.enable_planning and getattr(response, "tool_calls", None):
-                signal_calls, _real_calls = split_plan_signal_calls(response.tool_calls)
-                if signal_calls:
-                    plan = list(state.get("plan") or [])
-                    step_events: List[Dict[str, Any]] = []
-                    for call in signal_calls:
-                        args = call.get("args") or {}
-                        if call.get("name") == SET_PLAN_TOOL_NAME:
-                            plan = normalize_plan(args.get("steps"))
-                        else:
-                            plan = apply_update_step(plan, args.get("step"), args.get("status"))
-                            step_events.append({"step": args.get("step"), "status": args.get("status")})
-                    plan_updates["plan"] = plan
-                    if step_events:
-                        plan_updates["step_events"] = step_events
-
             new_thinking = extract_thinking(response)
             if new_thinking and self.on_thinking and not thinking_emitted:
                 self.on_thinking(new_thinking)
@@ -320,7 +311,6 @@ class OrchestratorBot(IOrchestratorBot):
                 "thinking": accumulated_thinking,
                 "status_events": retry_events,
             }
-            result.update(plan_updates)
 
             if not response.tool_calls:
                 # Final turn — set final_report
@@ -347,55 +337,105 @@ class OrchestratorBot(IOrchestratorBot):
 
             return result
 
+        async def plan_node(state: OrchestratorState) -> Dict[str, Any]:
+            """Dedicated node for the set_plan / update_step signal calls.
+
+            Applies the signals to the plan snapshot and answers them with
+            acknowledgment ToolMessages (the history must remain a normal tool
+            round-trip — models misbehave when the conversation ends on a bare
+            AI message). Signal calls are NOT real actions: they never appear
+            in tools_executed. Any real tool calls in the same batch are
+            executed afterwards by the tools node (see routing).
+            """
+            last_message = _last_tool_call_message(state.get("messages"))
+            signal_calls, _real = split_plan_signal_calls(
+                getattr(last_message, "tool_calls", None) or []
+            )
+            plan = list(state.get("plan") or [])
+            step_events: List[Dict[str, Any]] = []
+            results = []
+            for call in signal_calls:
+                args = call.get("args") or {}
+                if call.get("name") == SET_PLAN_TOOL_NAME:
+                    plan = normalize_plan(args.get("steps"))
+                else:
+                    plan = apply_update_step(plan, args.get("step"), args.get("status"))
+                    step_events.append({"step": args.get("step"), "status": args.get("status")})
+                tool_instance = self.registry.get(call.get("name"))
+                try:
+                    ack = tool_instance._run(**args) if tool_instance else "ok"
+                except Exception as e:
+                    ack = f"Error: {e}"
+                results.append(ToolMessage(tool_call_id=call["id"], content=str(ack)))
+            update: Dict[str, Any] = {"messages": results, "plan": plan}
+            if step_events:
+                update["step_events"] = step_events
+            return update
+
+        async def ask_user_node(state: OrchestratorState) -> Dict[str, Any]:
+            """Dedicated node for structured user questions (ask_user tool).
+
+            Pauses via a native LangGraph interrupt and waits for the caller's
+            answers (delivered through set_resume_command()); the loop then
+            continues in the SAME run with the answers in context. Asking wins
+            over any other tool call in the batch: real calls are answered
+            with a deferred ToolMessage (never executed) so the model re-issues
+            them with the user's answers in hand. The interrupt is the first
+            side effect, so resuming re-executes nothing else.
+            """
+            last_message = _last_tool_call_message(state.get("messages"))
+            calls = getattr(last_message, "tool_calls", None) or []
+            ask_call = next(c for c in calls if c.get("name") == ASK_USER_TOOL_NAME)
+            payload = questions_to_payload(ask_call.get("args") or {})
+            answers = interrupt({"type": "question_request", **payload})
+            answer_text = (
+                answers if isinstance(answers, str)
+                else json.dumps(answers, ensure_ascii=False, default=str)
+            )
+            results = [ToolMessage(
+                tool_call_id=ask_call["id"],
+                content=f"User answers: {answer_text}",
+            )]
+            for call in calls:
+                if call is ask_call or call.get("name") in PLAN_SIGNAL_TOOL_NAMES:
+                    continue  # plan signals were already answered by plan_node
+                results.append(ToolMessage(
+                    tool_call_id=call["id"],
+                    content=(
+                        "Not executed: the user's answers arrived first. "
+                        "Call the tool again now if it is still needed."
+                    ),
+                ))
+            return {
+                "messages": results,
+                "tools_executed": [{
+                    "tool_name": ASK_USER_TOOL_NAME,
+                    "args": ask_call.get("args") or {},
+                    "status": "success",
+                    "output": str(answer_text)[:500],
+                }],
+            }
+
         async def tools_node(state: OrchestratorState) -> Dict[str, Any]:
-            last_message = state["messages"][-1]
+            last_message = _last_tool_call_message(state.get("messages"))
             results = []
             tools_executed = []
-            
-            if not getattr(last_message, "tool_calls", None):
+
+            if last_message is None:
                 return {}
-                
+
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["args"]
+
+                # Plan signals were applied + acknowledged by plan_node.
+                if tool_name in PLAN_SIGNAL_TOOL_NAMES:
+                    continue
+
                 tool_instance = self.registry.get(tool_name)
-                
+
                 if not tool_instance:
                     results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: Tool '{tool_name}' not found."))
-                    continue
-
-                # Plan signal tools were already applied to state by agent_node;
-                # here they only get a no-op acknowledgment ToolMessage so the
-                # history stays consistent. They are NOT real actions, so they
-                # are excluded from tools_executed.
-                if tool_name in PLAN_SIGNAL_TOOL_NAMES:
-                    try:
-                        ack = tool_instance._run(**tool_args)
-                    except Exception as e:
-                        ack = f"Error: {e}"
-                    results.append(ToolMessage(tool_call_id=tool_call["id"], content=str(ack)))
-                    continue
-
-                # Structured question: pause via native interrupt and wait for the
-                # caller's answers (delivered through set_resume_command()). The
-                # loop then continues in the SAME run with the answers in context.
-                if tool_name == ASK_USER_TOOL_NAME:
-                    payload = questions_to_payload(tool_args)
-                    answers = interrupt({"type": "question_request", **payload})
-                    answer_text = (
-                        answers if isinstance(answers, str)
-                        else json.dumps(answers, ensure_ascii=False, default=str)
-                    )
-                    results.append(ToolMessage(
-                        tool_call_id=tool_call["id"],
-                        content=f"User answers: {answer_text}",
-                    ))
-                    tools_executed.append({
-                        "tool_name": tool_name,
-                        "args": tool_args,
-                        "status": "success",
-                        "output": str(answer_text)[:500],
-                    })
                     continue
 
                 risk_level = getattr(tool_instance, "risk_level", getattr(tool_instance, "risk_hint", 0))
@@ -468,10 +508,32 @@ class OrchestratorBot(IOrchestratorBot):
             return {"messages": results, "tools_executed": tools_executed}
 
         def should_continue(state: OrchestratorState) -> str:
+            """Route after agent: plan signals first, then ask_user, then tools."""
             last_message = state["messages"][-1]
-            if getattr(last_message, "tool_calls", None):
-                return "tools"
-            return END
+            calls = getattr(last_message, "tool_calls", None) or []
+            if not calls:
+                return END
+            if self.enable_planning and split_plan_signal_calls(calls)[0]:
+                return "plan"
+            if self.enable_user_questions and any(
+                c.get("name") == ASK_USER_TOOL_NAME for c in calls
+            ):
+                return "ask_user"
+            return "tools"
+
+        def route_after_plan(state: OrchestratorState) -> str:
+            """After the plan node: dispatch the remaining (real) calls."""
+            last_message = _last_tool_call_message(state.get("messages"))
+            _signals, real_calls = split_plan_signal_calls(
+                getattr(last_message, "tool_calls", None) or []
+            )
+            if not real_calls:
+                return "agent"
+            if self.enable_user_questions and any(
+                c.get("name") == ASK_USER_TOOL_NAME for c in real_calls
+            ):
+                return "ask_user"
+            return "tools"
 
         workflow = StateGraph(OrchestratorState)
         # Every node (built-in and custom) is wrapped so its execution is
@@ -479,6 +541,10 @@ class OrchestratorBot(IOrchestratorBot):
         # stream events and of BotResponse.node_trace.
         workflow.add_node("agent", _wrap_node_traced("agent", agent_node))
         workflow.add_node("tools", _wrap_node_traced("tools", tools_node))
+        if self.enable_planning:
+            workflow.add_node("plan", _wrap_node_traced("plan", plan_node))
+        if self.enable_user_questions:
+            workflow.add_node("ask_user", _wrap_node_traced("ask_user", ask_user_node))
 
         # Consumer-provided custom nodes (see agents/extensions.py). With none,
         # the wiring below is identical to the classic two-node ReAct graph.
@@ -500,11 +566,22 @@ class OrchestratorBot(IOrchestratorBot):
             workflow.set_entry_point("agent")
 
         end_target = end_nodes[0].name if end_nodes else END
-        workflow.add_conditional_edges(
-            "agent", should_continue, {"tools": "tools", END: end_target}
-        )
+        agent_routes = {"tools": "tools", END: end_target}
+        if self.enable_planning:
+            agent_routes["plan"] = "plan"
+        if self.enable_user_questions:
+            agent_routes["ask_user"] = "ask_user"
+        workflow.add_conditional_edges("agent", should_continue, agent_routes)
         if end_nodes:
             _chain(end_nodes, END)
+
+        if self.enable_planning:
+            plan_routes = {"agent": "agent", "tools": "tools"}
+            if self.enable_user_questions:
+                plan_routes["ask_user"] = "ask_user"
+            workflow.add_conditional_edges("plan", route_after_plan, plan_routes)
+        if self.enable_user_questions:
+            workflow.add_edge("ask_user", "agent")
 
         if after_tools_nodes:
             workflow.add_edge("tools", after_tools_nodes[0].name)
@@ -598,6 +675,7 @@ class OrchestratorBot(IOrchestratorBot):
                         "node": node_name,
                         "seq": node_seq,
                         "ts": trace[-1].get("ts") or time.time(),
+                        "detail": trace[-1].get("detail", {}),
                     })
             # Yield structured events for the CLI
             yield (stream_mode, payload)

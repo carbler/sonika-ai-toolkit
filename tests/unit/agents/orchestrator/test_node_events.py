@@ -207,3 +207,306 @@ class TestNodeTraceInResponse:
         )
         result = await bot.arun("Hola")
         assert [e["node"] for e in result.node_trace][:2] == ["audit", "agent"]
+
+
+def _planning_model():
+    """set_plan → step running + tool → step done → final (mirrors test_graph_planning)."""
+    mock_model = MagicMock()
+    chunks = [
+        AIMessageChunk(content="", tool_calls=[
+            {"id": "s1", "name": "set_plan",
+             "args": {"steps": ["Buscar datos", "Generar reporte"]}}]),
+        AIMessageChunk(content="Paso 1...", tool_calls=[
+            {"id": "s2", "name": "update_step", "args": {"step": 1, "status": "running"}},
+            {"id": "t1", "name": "test_tool", "args": {"x": 1}}]),
+        AIMessageChunk(content="", tool_calls=[
+            {"id": "s3", "name": "update_step", "args": {"step": 1, "status": "done"}}]),
+        AIMessageChunk(content="Todo listo."),
+    ]
+    n = 0
+
+    async def fake_astream(messages):
+        nonlocal n
+        idx = min(n, len(chunks) - 1)
+        n += 1
+        yield chunks[idx]
+
+    mock_model.bind_tools.return_value = mock_model
+    mock_model.astream = fake_astream
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Todo listo."))
+    return mock_model
+
+
+def _asking_model():
+    """First turn calls ask_user; second turn answers with final text."""
+    mock_model = MagicMock()
+    ask_chunk = AIMessageChunk(content="", tool_calls=[{
+        "id": "q1", "name": "ask_user",
+        "args": {"questions": [{"id": "color", "text": "¿Qué color?", "type": "text"}]},
+    }])
+    n = 0
+
+    async def fake_astream(messages):
+        nonlocal n
+        n += 1
+        yield ask_chunk if n == 1 else AIMessageChunk(content="Perfecto, azul.")
+
+    mock_model.bind_tools.return_value = mock_model
+    mock_model.astream = fake_astream
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Perfecto, azul."))
+    return mock_model
+
+
+@pytest.mark.asyncio
+class TestNodeDetail:
+    """Node events carry the node's params (args) and output in `detail`."""
+
+    async def test_tools_node_detail_has_args_and_output(self):
+        bot = _make_bot(_tool_then_final_model(), tools=[_make_tool()])
+        events = await _collect_events(bot, goal="usa la tool")
+        tools_ev = next(e for e in _graph_events(events, "node_invoked")
+                        if e["node"] == "tools")
+        executed = tools_ev["detail"]["tools_executed"]
+        assert executed[0]["tool_name"] == "test_tool"
+        assert executed[0]["args"] == {"x": 1}
+        assert executed[0]["status"] == "success"
+        assert "tool output" in executed[0]["output"]
+
+    async def test_agent_node_detail_has_tool_calls_and_output(self):
+        bot = _make_bot(_tool_then_final_model(), tools=[_make_tool()])
+        events = await _collect_events(bot, goal="usa la tool")
+        agent_evs = [e for e in _graph_events(events, "node_invoked")
+                     if e["node"] == "agent"]
+        # First agent turn requested the tool (with args); last one emitted text.
+        assert agent_evs[0]["detail"]["tool_calls"] == [
+            {"name": "test_tool", "args": {"x": 1}}]
+        assert agent_evs[-1]["detail"]["output"] == "Hecho."
+
+    async def test_node_trace_entries_carry_detail(self):
+        bot = _make_bot(_tool_then_final_model(), tools=[_make_tool()])
+        result = await bot.arun("usa la tool")
+        by_node = {e["node"]: e for e in result.node_trace}
+        assert by_node["tools"]["detail"]["tools_executed"][0]["args"] == {"x": 1}
+        assert by_node["agent"]["detail"]  # agent entries have detail too
+
+
+@pytest.mark.asyncio
+class TestPlanNode:
+    """With enable_planning=True the plan is a real graph node."""
+
+    async def test_plan_node_in_topology(self):
+        bot = _make_bot(_planning_model(), tools=[_make_tool()], enable_planning=True)
+        topo = bot.get_graph_topology()
+        assert "plan" in topo["nodes"]
+        assert any(e["source"] == "agent" and e["target"] == "plan"
+                   for e in topo["edges"])
+        assert any(e["source"] == "plan" and e["target"] == "tools"
+                   for e in topo["edges"])
+        assert any(e["source"] == "plan" and e["target"] == "agent"
+                   for e in topo["edges"])
+
+    async def test_plan_node_absent_when_disabled(self):
+        bot = _make_bot(_final_only_model())
+        assert "plan" not in bot.get_graph_topology()["nodes"]
+
+    async def test_plan_node_invoked_with_detail(self):
+        bot = _make_bot(_planning_model(), tools=[_make_tool()], enable_planning=True)
+        events = await _collect_events(bot, goal="Haz dos cosas")
+        plan_evs = [e for e in _graph_events(events, "node_invoked")
+                    if e["node"] == "plan"]
+        assert plan_evs, "plan node never invoked"
+        # First plan-node run registers the snapshot.
+        snapshot = plan_evs[0]["detail"]["plan"]
+        assert [s["description"] for s in snapshot] == ["Buscar datos", "Generar reporte"]
+        # A later run carries the running step event.
+        assert any(
+            {"step": 1, "status": "running"} in (e["detail"].get("step_events") or [])
+            for e in plan_evs
+        )
+
+    async def test_node_sequence_shows_plan_steps(self):
+        bot = _make_bot(_planning_model(), tools=[_make_tool()], enable_planning=True)
+        events = await _collect_events(bot, goal="Haz dos cosas")
+        seq = [e["node"] for e in _graph_events(events, "node_invoked")]
+        assert seq == ["agent", "plan", "agent", "plan", "tools",
+                       "agent", "plan", "agent"]
+
+    async def test_arun_plan_still_populated(self):
+        bot = _make_bot(_planning_model(), tools=[_make_tool()], enable_planning=True)
+        result = await bot.arun("Haz dos cosas")
+        assert result.content == "Todo listo."
+        statuses = {s["step"]: s["status"] for s in result.plan}
+        assert statuses == {1: "done", 2: "pending"}
+
+
+@pytest.mark.asyncio
+class TestAskUserNode:
+    """With enable_user_questions=True, ask_user is a real graph node."""
+
+    async def test_ask_user_node_in_topology(self):
+        bot = _make_bot(_asking_model(), enable_user_questions=True)
+        topo = bot.get_graph_topology()
+        assert "ask_user" in topo["nodes"]
+        assert any(e["source"] == "ask_user" and e["target"] == "agent"
+                   for e in topo["edges"])
+
+    async def test_ask_user_node_absent_when_disabled(self):
+        bot = _make_bot(_final_only_model())
+        assert "ask_user" not in bot.get_graph_topology()["nodes"]
+
+    async def test_interrupt_then_resume_runs_ask_user_node(self):
+        bot = _make_bot(_asking_model(), enable_user_questions=True)
+        thread = "t-ask-1"
+
+        interrupted = False
+        async for stream_mode, payload in bot.astream_events(
+                "Pinta algo", mode="auto", thread_id=thread):
+            if (stream_mode == "updates" and isinstance(payload, dict)
+                    and "__interrupt__" in payload):
+                interrupted = True
+        assert interrupted, "run did not pause on the ask_user interrupt"
+
+        bot.set_resume_command({"color": "azul"})
+        nodes_after = []
+        final = None
+        async for stream_mode, payload in bot.astream_events(
+                None, mode="auto", thread_id=thread):
+            if stream_mode == "graph" and payload["type"] == "node_invoked":
+                nodes_after.append(payload)
+            if stream_mode == "updates" and isinstance(payload, dict):
+                final = payload.get("agent", {}).get("final_report") or final
+
+        assert [e["node"] for e in nodes_after] == ["ask_user", "agent"]
+        ask_ev = nodes_after[0]
+        assert "azul" in ask_ev["detail"]["output"]
+        exec_rec = ask_ev["detail"]["tools_executed"][0]
+        assert exec_rec["tool_name"] == "ask_user"
+        assert exec_rec["args"]["questions"][0]["id"] == "color"
+        assert final == "Perfecto, azul."
+
+    async def test_arun_surfaces_questions_on_interrupt(self):
+        bot = _make_bot(_asking_model(), enable_user_questions=True)
+        result = await bot.arun("Pinta algo")
+        assert result.needs_input is True
+        assert result.questions[0]["id"] == "color"
+
+
+def _mixed_ask_and_tool_model():
+    """First turn: ask_user + a real tool in the SAME batch; then final."""
+    mock_model = MagicMock()
+    mixed_chunk = AIMessageChunk(content="", tool_calls=[
+        {"id": "q1", "name": "ask_user",
+         "args": {"questions": [{"id": "color", "text": "¿Color?", "type": "text"}]}},
+        {"id": "t1", "name": "test_tool", "args": {"x": 1}},
+    ])
+    n = 0
+
+    async def fake_astream(messages):
+        nonlocal n
+        n += 1
+        yield mixed_chunk if n == 1 else AIMessageChunk(content="Listo con azul.")
+
+    mock_model.bind_tools.return_value = mock_model
+    mock_model.astream = fake_astream
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Listo con azul."))
+    return mock_model
+
+
+def _plan_and_ask_model():
+    """First turn: update_step signal + ask_user in the SAME batch; then final."""
+    mock_model = MagicMock()
+    chunks = [
+        AIMessageChunk(content="", tool_calls=[
+            {"id": "s1", "name": "set_plan", "args": {"steps": ["Preguntar", "Hacer"]}}]),
+        AIMessageChunk(content="", tool_calls=[
+            {"id": "s2", "name": "update_step", "args": {"step": 1, "status": "running"}},
+            {"id": "q1", "name": "ask_user",
+             "args": {"questions": [{"id": "color", "text": "¿Color?", "type": "text"}]}},
+        ]),
+        AIMessageChunk(content="Hecho."),
+    ]
+    n = 0
+
+    async def fake_astream(messages):
+        nonlocal n
+        idx = min(n, len(chunks) - 1)
+        n += 1
+        yield chunks[idx]
+
+    mock_model.bind_tools.return_value = mock_model
+    mock_model.astream = fake_astream
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hecho."))
+    return mock_model
+
+
+@pytest.mark.asyncio
+class TestMixedBatches:
+    """Batches mixing ask_user / plan signals / real tools stay consistent."""
+
+    async def _run_with_resume(self, bot, goal, answers, thread):
+        async for _ in bot.astream_events(goal, mode="auto", thread_id=thread):
+            pass
+        bot.set_resume_command(answers)
+        nodes, final = [], None
+        async for mode, payload in bot.astream_events(None, mode="auto", thread_id=thread):
+            if mode == "graph" and payload["type"] == "node_invoked":
+                nodes.append(payload["node"])
+            if mode == "updates" and isinstance(payload, dict):
+                final = (payload.get("agent") or {}).get("final_report") or final
+        return nodes, final
+
+    async def test_ask_user_wins_over_real_tool_and_defers_it(self):
+        tool = _make_tool()
+        bot = _make_bot(_mixed_ask_and_tool_model(), tools=[tool],
+                        enable_user_questions=True)
+        nodes, final = await self._run_with_resume(
+            bot, "algo", {"color": "azul"}, "t-mixed-1")
+        # ask_user ran; the real tool was deferred, NOT executed.
+        assert nodes[0] == "ask_user"
+        assert "tools" not in nodes
+        tool.ainvoke.assert_not_called()
+        assert final == "Listo con azul."
+
+    async def test_every_tool_call_gets_a_toolmessage_answer(self):
+        """History integrity: no dangling tool_call ids after the deferral."""
+        from langchain_core.messages import ToolMessage
+        bot = _make_bot(_mixed_ask_and_tool_model(), tools=[_make_tool()],
+                        enable_user_questions=True)
+        thread = "t-mixed-2"
+        async for _ in bot.astream_events("algo", mode="auto", thread_id=thread):
+            pass
+        bot.set_resume_command({"color": "azul"})
+        async for _ in bot.astream_events(None, mode="auto", thread_id=thread):
+            pass
+        state = bot.graph.get_state({"configurable": {"thread_id": thread}})
+        messages = state.values["messages"]
+        called_ids = {tc["id"] for m in messages
+                      for tc in (getattr(m, "tool_calls", None) or [])}
+        answered_ids = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+        assert called_ids == answered_ids
+
+    async def test_plan_signal_and_ask_user_same_batch(self):
+        bot = _make_bot(_plan_and_ask_model(), enable_planning=True,
+                        enable_user_questions=True)
+        thread = "t-plan-ask"
+        first_nodes = []
+        async for mode, payload in bot.astream_events(
+                "algo", mode="auto", thread_id=thread):
+            if mode == "graph" and payload["type"] == "node_invoked":
+                first_nodes.append(payload["node"])
+        # Batch 2 (update_step + ask_user) routed agent → plan → (interrupt).
+        assert first_nodes == ["agent", "plan", "agent", "plan"]
+
+        bot.set_resume_command({"color": "azul"})
+        resumed, final = [], None
+        async for mode, payload in bot.astream_events(
+                None, mode="auto", thread_id=thread):
+            if mode == "graph" and payload["type"] == "node_invoked":
+                resumed.append(payload["node"])
+            if mode == "updates" and isinstance(payload, dict):
+                final = (payload.get("agent") or {}).get("final_report") or final
+        assert resumed == ["ask_user", "agent"]
+        assert final == "Hecho."
+        # The plan progressed despite sharing the batch with ask_user.
+        state = bot.graph.get_state({"configurable": {"thread_id": thread}})
+        assert {s["step"]: s["status"] for s in state.values["plan"]}[1] == "running"
