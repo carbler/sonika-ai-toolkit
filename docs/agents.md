@@ -245,6 +245,68 @@ Multiple nodes at the same position chain in list order. Node names must not
 collide with the built-ins (`agent`, `tools`, `plan`, `ask_user`); their
 state updates stream as `("updates", {"<name>": {...}})`.
 
+### Custom Wiring (`custom_edges` / `custom_routers`)
+
+Positions cover the common cases; for full control you can **override the
+edges and routing** of any node — built-in or custom:
+
+```python
+from sonika_ai_toolkit import CustomNode, CustomEdge, CustomRouter
+
+def validator(state):           # your nodes, wired manually
+    return {"session_log": ["validated"]}
+
+def summarize(state):
+    return {"session_log": ["summary written"]}
+
+def my_router(state):
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None):
+        return None             # delegate to the DEFAULT route (tools/plan/ask_user)
+    return "summarize"          # divert the final turn instead of ending at agent
+
+bot = OrchestratorBot(
+    ...,
+    custom_nodes=[
+        CustomNode(name="validator", node=validator, position=None),  # manual wiring
+        CustomNode(name="summarize", node=summarize, position=None),
+    ],
+    custom_edges=[
+        CustomEdge(source="tools", target="validator"),   # replaces tools → agent
+        CustomEdge(source="validator", target="agent"),
+        CustomEdge(source="summarize", target="__end__"),
+    ],
+    custom_routers=[
+        CustomRouter(source="agent", router=my_router,
+                     targets=["tools", "summarize", "__end__"]),
+    ],
+)
+```
+
+Resulting graph (visible in `get_graph_topology()` and the `graph_topology`
+event): `agent →(cond)→ tools → validator → agent →(cond)→ summarize → END`.
+
+**Rules:**
+
+- `CustomEdge(source, target)` — a fixed edge that **replaces** the built-in
+  outgoing wiring of `source` (edge *and* router). `"__start__"` as source
+  overrides the entry point; `"__end__"` as target ends the run. Several
+  edges from one source fan out in parallel (LangGraph semantics).
+- `CustomRouter(source, router, targets=None)` — replaces the conditional
+  routing of `source`. Your `router(state)` returns the next node name,
+  `"__end__"`, or `None`/`DEFAULT_ROUTE` to **delegate to the built-in
+  decision** — so you can keep the plan/ask_user/tools logic and only add
+  your extra branches. One router per source. `targets` declares the
+  conditional edges shown in the topology (all nodes + `__end__` if omitted).
+- `CustomNode(..., position=None)` — added to the graph but not auto-wired;
+  it must be referenced by your edges/routers (validated at construction).
+- Everything is validated against the *actual* node set: `plan`/`ask_user`
+  are valid only with their feature flags on; unknown names raise
+  `ValueError` at construction, not at runtime.
+- With overrides you own the invariants: keep the loop reachable and END
+  reachable, and remember every `tool_call` in an AIMessage needs a
+  ToolMessage answer before the next model turn.
+
 ## Graph Topology & Node Events (both bots)
 
 Both **ReactBot** and **OrchestratorBot** expose the graph they run and signal
