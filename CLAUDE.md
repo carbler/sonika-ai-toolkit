@@ -46,6 +46,17 @@ pip install mkdocs-material && mkdocs serve
 mkdocs gh-deploy --force
 ```
 
+## Releasing
+
+The release process is intentionally minimal. To cut a release, do **only** these steps and nothing more:
+
+1. Bump the `version="X.Y.Z"` in `setup.py`.
+2. Commit the change.
+3. **Push to `main`.**
+4. **Create and push the tag** `vX.Y.Z` (`git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`).
+
+That's it — **push to main + create the tag, nothing else.** Do NOT create the GitHub Release; the maintainer publishes it manually from the pushed tag. Publishing the GitHub Release is what triggers `.github/workflows/python-publish.yml` to upload the package to PyPI.
+
 ## Documentation (MkDocs + GitHub Pages)
 
 The project uses **MkDocs Material** for documentation, hosted on GitHub Pages.
