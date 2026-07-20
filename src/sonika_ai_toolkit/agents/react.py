@@ -507,6 +507,9 @@ class ReactBot(IConversationBot):
 
         self.conversation = None
         self.agent_executor = None
+        # Set by abort() to stop the in-flight stream_response run at the next
+        # event boundary. Reset at the start of every stream_response call.
+        self._abort_requested = False
 
     # ============= INTERNAL HELPERS =============
 
@@ -1135,6 +1138,7 @@ class ReactBot(IConversationBot):
         previous_thinking = ""
         questions_emitted = False
         node_seq = 0
+        self._abort_requested = False
 
         # First event: the graph layout, so consumers can draw it up front.
         yield {"type": "graph", "run_id": run_id, **self.get_graph_topology()}
@@ -1146,6 +1150,13 @@ class ReactBot(IConversationBot):
             for stream_mode, payload in self.graph.stream(
                 initial_state, config=config, stream_mode=["updates", "values"]
             ):
+                # Cooperative abort: bot.abort() (from another thread/task) flips
+                # the flag; we stop at the next node boundary. Breaking closes the
+                # stream generator, cancelling the run. "aborted" is the last chunk.
+                if self._abort_requested:
+                    self._abort_requested = False
+                    yield {"type": "aborted", "run_id": run_id}
+                    return
                 if stream_mode == "updates":
                     for node_name, delta in payload.items():
                         if node_name.startswith("__"):
@@ -1203,6 +1214,19 @@ class ReactBot(IConversationBot):
 
         result = self._finalize_response(final_state, tool_logger, limited_logs, token_usage)
         yield {"type": "done", "result": result}
+
+    def abort(self):
+        """Stop the in-flight ``stream_response`` run at the next node boundary.
+
+        Meant to be called from a different thread/task than the one consuming
+        the generator (e.g. a UI handler) while the bot is streaming. The stream
+        yields a final ``{"type": "aborted", ...}`` chunk and then stops — no
+        ``done`` chunk is emitted. Granularity is per-node (a running node is not
+        cancelled mid-execution), so an abort during a long tool call applies
+        once that tool returns. The non-streaming ``get_response`` uses
+        ``ainvoke`` and is not affected by this flag.
+        """
+        self._abort_requested = True
 
     def load_conversation_history(self, messages: List[Message]):
         """Load conversation history from Django model instances."""

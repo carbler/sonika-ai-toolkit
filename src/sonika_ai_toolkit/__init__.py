@@ -22,6 +22,7 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
     GraphEdgeSpec,
     GraphTopologyEvent,
     NodeInvokedEvent,
+    AbortedEvent,
     NodeTraceEntry,
     NodeDetail,
 )
@@ -105,6 +106,7 @@ __all__ = [
     "GraphEdgeSpec",
     "GraphTopologyEvent",
     "NodeInvokedEvent",
+    "AbortedEvent",
     "NodeTraceEntry",
     "NodeDetail",
     # Skills

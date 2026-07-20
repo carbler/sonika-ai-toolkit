@@ -326,6 +326,32 @@ class TestReactBotAsks:
         assert done and done[0]["result"].needs_input is True
 
 
+class TestReactBotAbort:
+    """bot.abort() stops the stream_response run at the next node boundary."""
+
+    def test_abort_emits_aborted_chunk_and_stops(self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.return_value = iter([AIMessageChunk(content="Listo!")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        events = []
+        for ev in bot.stream_response(user_message="Hola", messages=[], logs=[]):
+            events.append(ev)
+            if len(events) == 1:      # first chunk is the graph topology
+                bot.abort()
+        # Last chunk is the aborted signal with a run_id; no "done" was emitted.
+        assert events[-1]["type"] == "aborted"
+        assert events[-1]["run_id"]
+        assert not any(e.get("type") == "done" for e in events)
+        # Flag is reset so the bot is reusable.
+        assert bot._abort_requested is False
+
+    def test_run_completes_normally_when_not_aborted(self, mock_language_model, mock_raw_model):
+        mock_raw_model.stream.return_value = iter([AIMessageChunk(content="Listo!")])
+        bot = ReactBot(language_model=mock_language_model, instructions="x")
+        events = list(bot.stream_response(user_message="Hola", messages=[], logs=[]))
+        assert not any(e.get("type") == "aborted" for e in events)
+        assert any(e.get("type") == "done" for e in events)
+
+
 class TestReactBotSkills:
     """Folder/programmatic skills: prompt injection + tool merge."""
 

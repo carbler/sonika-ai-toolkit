@@ -119,6 +119,19 @@ class NodeInvokedEvent(TypedDict):
     detail: NodeDetail
 
 
+class AbortedEvent(TypedDict):
+    """Emitted when a run is stopped early by ``bot.abort()``.
+
+    Yielded as ``("graph", payload)`` by ``OrchestratorBot.astream_events`` and
+    as ``{"type": "aborted", ...}`` by ``ReactBot.stream_response``, right before
+    the stream stops. It is the last event of an aborted run. State up to the
+    last completed node is preserved in the checkpointer (``thread_id``); work
+    in progress at the moment of abort is discarded.
+    """
+    type: Literal["aborted"]
+    run_id: str
+
+
 class NodeTraceEntry(TypedDict):
     """One entry of ``BotResponse.node_trace`` — the recorded execution path."""
     node: str

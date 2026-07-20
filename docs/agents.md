@@ -136,6 +136,7 @@ asyncio.run(main())
 | `await bot.arun(goal)` | Async execution |
 | `bot.astream_events(goal, mode)` | Async streaming with interrupt support |
 | `bot.set_resume_command(data)` | Resume after an interrupt |
+| `bot.abort()` | Stop the in-flight `astream_events` run at the next boundary (see [Aborting a run](#aborting-a-run)) |
 | `await bot.a_prewarm()` | Pre-warm TCP/TLS connection |
 
 ### Structured Plan & Step Progress (`enable_planning`)
@@ -339,6 +340,59 @@ result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...,
                     #   "detail": {"tools_executed": [{..., "output": "..."}]}},
                     #  {"node": "agent", "seq": 3, ..., "detail": {"output": "..."}}]
 ```
+
+## Aborting a run
+
+Both bots expose `abort()` to **stop an in-flight streaming run**. It is meant
+to be called from a **different task/thread** than the one consuming the stream
+(a UI button, a websocket handler, a cancel signal) while the bot is running.
+
+```python
+# Task A — consumes the stream
+async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
+    if stream_mode == "graph" and payload["type"] == "aborted":
+        print("Run stopped by the user")
+        break
+    render(stream_mode, payload)
+
+# Task B — the library user, at any moment
+bot.abort()
+```
+
+ReactBot works the same way with its sync stream (call `abort()` from another
+thread):
+
+```python
+for chunk in bot.stream_response(user_message, messages=[], logs=[]):
+    if chunk["type"] == "aborted":
+        break
+    render(chunk)
+# ...meanwhile, from another thread:  bot.abort()
+```
+
+**What happens on abort:**
+
+- The stream yields one final event and stops: `("graph", {"type": "aborted",
+  "run_id": ...})` for OrchestratorBot, `{"type": "aborted", "run_id": ...}`
+  for ReactBot. ReactBot emits **no** `done` chunk when aborted. The typed
+  contract is `AbortedEvent` (importable from `sonika_ai_toolkit`).
+- **It genuinely halts the graph** — not just the event stream. Streaming is
+  pull-driven, so breaking cancels the underlying LangGraph run; no work
+  continues in the background. State up to the last completed node is preserved
+  in the checkpointer under the run's `thread_id`.
+- The abort flag is **reset at the start of every run**, so the bot is
+  immediately reusable.
+
+**Granularity — the one thing to know:** a node that is already running is not
+cancelled mid-execution; the abort applies at the **next boundary**.
+
+- Aborting while the `agent` is reasoning takes effect almost immediately — the
+  stream yields on every LLM token, so the check runs constantly.
+- Aborting while a **tool is executing** only applies once that tool returns (a
+  running node cannot be killed halfway).
+
+**Not affected:** the non-streaming `run` / `arun` / `get_response` paths use
+`ainvoke` and do not observe the flag — cancel their asyncio task to stop them.
 
 ## BotResponse
 

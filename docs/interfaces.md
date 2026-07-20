@@ -61,6 +61,7 @@ from sonika_ai_toolkit import (
     QuestionOptionEvent,   # a choice inside a QuestionItem
     GraphTopologyEvent,    # node/edge layout, first event of a run
     NodeInvokedEvent,      # signal fired every time a node executes
+    AbortedEvent,          # last event when a run is stopped by bot.abort()
     NodeDetail,            # params/output summary inside a node event
     GraphEdgeSpec,         # one edge of the topology
     NodeTraceEntry,        # one entry of BotResponse.node_trace
@@ -186,6 +187,19 @@ carries the node's params/output summary.
          "status": "success", "output": "14:44"},
     ]},
 }
+```
+
+### AbortedEvent
+
+The last event of a run stopped by `bot.abort()`. Emitted as `("graph",
+payload)` by `OrchestratorBot.astream_events` and as `{"type": "aborted", ...}`
+by `ReactBot.stream_response`, right before the stream stops. State up to the
+last completed node is preserved in the checkpointer (`thread_id`); work in
+progress at the moment of abort is discarded. See
+[Aborting a run](agents.md#aborting-a-run).
+
+```python
+{"type": "aborted", "run_id": "..."}
 ```
 
 ### NodeDetail

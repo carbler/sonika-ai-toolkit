@@ -11,6 +11,7 @@ Covers:
 Uses mocked LLM — no API keys needed.
 """
 
+import asyncio
 import re
 
 import pytest
@@ -482,3 +483,70 @@ class TestMixedBatches:
         # The plan progressed despite sharing the batch with ask_user.
         state = bot.graph.get_state({"configurable": {"thread_id": thread}})
         assert {s["step"]: s["status"] for s in state.values["plan"]}[1] == "running"
+
+
+def _counting_model():
+    """agent round 1 requests a tool, round 2+ finalizes. Exposes .calls so a
+    test can prove the graph did NOT advance to the next agent round."""
+    mock_model = MagicMock()
+    chunk_tool = AIMessageChunk(
+        content="", tool_calls=[{"id": "t1", "name": "test_tool", "args": {"x": 1}}]
+    )
+    chunk_final = AIMessageChunk(content="Hecho.")
+    state = {"calls": 0}
+
+    async def fake_astream(messages):
+        state["calls"] += 1
+        yield chunk_tool if state["calls"] == 1 else chunk_final
+
+    mock_model.bind_tools.return_value = mock_model
+    mock_model.astream = fake_astream
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hecho."))
+    mock_model._calls = state
+    return mock_model
+
+
+class TestAbort:
+    """bot.abort() actually halts the graph — not just the event stream."""
+
+    @pytest.mark.asyncio
+    async def test_abort_halts_graph_execution(self):
+        # Model would run agent(round1) → tools → agent(round2). Aborting right
+        # after the first event must stop the graph BEFORE the tools node and
+        # the second agent round ever run.
+        model = _counting_model()
+        bot = _make_bot(model, tools=[_make_tool()])
+        events = []
+        async for stream_mode, payload in bot.astream_events("Hazlo", mode="auto"):
+            events.append((stream_mode, payload))
+            if len(events) == 1:      # first event is the graph_topology
+                bot.abort()
+
+        # Last event is the aborted signal, and it carries a run_id.
+        assert events[-1] == ("graph", {"type": "aborted", "run_id": events[-1][1]["run_id"]})
+        assert events[-1][1]["run_id"]
+
+        # DECISIVE: the graph genuinely stopped. A full run calls the model
+        # twice (round1 → tools → round2); after abort it was called exactly
+        # once — the second agent round never happened.
+        assert model._calls["calls"] == 1
+        # The tools node never executed.
+        assert all(n["node"] != "tools" for n in _graph_events(events, "node_invoked"))
+
+        # Nothing keeps running in the background: after waiting, the model
+        # call count is unchanged (execution is pull-driven and was cancelled).
+        await asyncio.sleep(0.05)
+        assert model._calls["calls"] == 1
+        # Flag is reset so the bot is reusable.
+        assert bot._abort_requested is False
+
+    @pytest.mark.asyncio
+    async def test_run_completes_normally_when_not_aborted(self):
+        # Sanity: without abort the same setup finishes, runs the tools node,
+        # calls the model twice, and never emits "aborted".
+        model = _counting_model()
+        bot = _make_bot(model, tools=[_make_tool()])
+        events = await _collect_events(bot, goal="Hazlo")
+        assert not _graph_events(events, "aborted")
+        assert "tools" in [n["node"] for n in _graph_events(events, "node_invoked")]
+        assert model._calls["calls"] == 2

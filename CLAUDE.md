@@ -182,6 +182,7 @@ All agents share a common ABC lineage:
 
 ```
 IBot (ABC)
+│     abort() → None          # stop the in-flight streaming run (both bots)
 ├── IConversationBot    — ReactBot
 │     get_response(user_input, messages, logs) → BotResponse
 └── IOrchestratorBot    — OrchestratorBot
@@ -290,6 +291,7 @@ Each `run(goal)` call:
 - `await bot.arun(goal)` — async, runs in `"auto"` mode (no interrupts)
 - `async for stream_mode, payload in bot.astream_events(goal, mode="ask")` — streaming with interrupt support
 - `bot.set_resume_command(resume_data)` — provide approval data after an interrupt
+- `bot.abort()` — stop the in-flight `astream_events` run at the next event boundary (emits a final `("graph", AbortedEvent)` then stops; genuinely halts the graph — streaming is pull-driven, so breaking cancels the run and nothing continues in the background; a running node still finishes, the cut is at the next boundary; flag reset each run; does not affect `run`/`arun`/`get_response` which use `ainvoke`)
 - `await bot.a_prewarm()` — pre-warm TCP/TLS connection
 - `bot.get_graph_topology()` — static node/edge layout of the compiled graph
 - `memory_path` — directory for MEMORY.md and session logs
@@ -418,7 +420,7 @@ from sonika_ai_toolkit import (
     # Stream event types
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     PlanStep, StepEvent,
-    GraphTopologyEvent, NodeInvokedEvent, GraphEdgeSpec, NodeTraceEntry, NodeDetail,
+    GraphTopologyEvent, NodeInvokedEvent, AbortedEvent, GraphEdgeSpec, NodeTraceEntry, NodeDetail,
     # Response type
     BotResponse, ILanguageModel,
     # LLM providers

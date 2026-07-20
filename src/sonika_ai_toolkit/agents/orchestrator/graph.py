@@ -175,6 +175,9 @@ class OrchestratorBot(IOrchestratorBot):
         # Singleton compiled graph
         self.graph = self._build_workflow().compile(checkpointer=self.checkpointer)
         self._last_resume_command = None
+        # Set by abort() to stop the in-flight astream_events run at the next
+        # event boundary. Reset at the start of every astream_events call.
+        self._abort_requested = False
 
     async def a_prewarm(self):
         """Send a dummy request to the LLM to open the TCP/TLS connection early."""
@@ -558,6 +561,9 @@ class OrchestratorBot(IOrchestratorBot):
 
         config = {"configurable": {"thread_id": current_thread}}
 
+        # Reset before any yield so an abort() the caller fires while consuming
+        # the very first event (the topology) is not clobbered below.
+        self._abort_requested = False
 
         if goal:
             # First turn: provide initial state
@@ -595,6 +601,15 @@ class OrchestratorBot(IOrchestratorBot):
 
         node_seq = 0
         async for stream_mode, payload in self.graph.astream(stream_input, config=config, stream_mode=["messages", "updates"]):
+            # Cooperative abort: bot.abort() (from another task) flips the flag;
+            # we stop at the next event boundary. Breaking closes the astream
+            # generator, cancelling the run — state up to the last completed
+            # node stays in the checkpointer (thread_id). "aborted" is the last
+            # event yielded.
+            if self._abort_requested:
+                self._abort_requested = False
+                yield ("graph", {"type": "aborted", "run_id": run_id})
+                break
             # Synthesize a ("graph", node_invoked) signal per node execution.
             # The run_id/ts come from the node's own node_trace delta so they
             # stay consistent even across interrupt resumes.
@@ -709,3 +724,19 @@ class OrchestratorBot(IOrchestratorBot):
     def set_resume_command(self, resume_data: Any):
         from langgraph.types import Command
         self._last_resume_command = Command(resume=resume_data)
+
+    def abort(self):
+        """Stop the in-flight ``astream_events`` run at the next event boundary.
+
+        Meant to be called from a different task than the one consuming the
+        stream (e.g. a UI/websocket handler) while the graph is running. The
+        stream yields a final ``("graph", {"type": "aborted", ...})`` event and
+        then stops. Because streaming yields on every LLM token, an abort during
+        the agent's reasoning takes effect almost immediately; an abort while a
+        tool is executing only applies once that tool returns (a running node
+        cannot be cancelled mid-execution). State up to the last completed node
+        is preserved in the checkpointer under the run's ``thread_id``; the
+        non-streaming ``run``/``arun`` paths use ``ainvoke`` and are not affected
+        by this flag — cancel their asyncio task to stop them.
+        """
+        self._abort_requested = True
