@@ -29,14 +29,6 @@ from sonika_ai_toolkit.agents.orchestrator.events import (
 # Skills (folder-based capability packs)
 from sonika_ai_toolkit.skills import Skill, load_skills
 
-# Custom graph nodes + wiring overrides
-from sonika_ai_toolkit.agents.extensions import (
-    CustomNode,
-    CustomEdge,
-    CustomRouter,
-    DEFAULT_ROUTE,
-)
-
 # Response type
 from sonika_ai_toolkit.utilities.types import BotResponse, ILanguageModel
 
@@ -118,11 +110,6 @@ __all__ = [
     # Skills
     "Skill",
     "load_skills",
-    # Custom graph nodes + wiring overrides
-    "CustomNode",
-    "CustomEdge",
-    "CustomRouter",
-    "DEFAULT_ROUTE",
     # Types
     "BotResponse",
     "ILanguageModel",

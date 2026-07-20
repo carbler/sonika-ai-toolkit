@@ -18,25 +18,18 @@ Está optimizado para la **velocidad y la autonomía**, permitiendo que el model
 
 ## 🏗️ Arquitectura y Nodos
 
-El `OrchestratorBot` actual utiliza una arquitectura **Fast ReAct** simplificada para maximizar la velocidad, pero el paquete incluye una biblioteca completa de nodos modulares.
+El `OrchestratorBot` utiliza una arquitectura **Fast ReAct** compacta compilada como un grafo de estado de LangGraph. Todos los nodos están implementados **inline en `graph.py`** (no hay un directorio de nodos aparte). El cableado del grafo es fijo.
 
-### 🟢 Nodos en Uso (Active Flow)
-Estos nodos están implementados directamente en `graph.py` y forman el núcleo del ciclo de ejecución actual:
+### Nodos del grafo
 
-1.  **🧠 Agent Node**: El cerebro del flujo. Se encarga de razonar sobre el objetivo, leer la memoria histórica y decidir si invoca herramientas o genera la respuesta final.
-2.  **🛠️ Tools Node**: El ejecutor. Procesa las llamadas a herramientas, maneja la lógica de **HITL (Human-In-The-Loop)** mediante interrupciones y captura las observaciones para devolverlas al agente.
+Dos nodos siempre presentes y dos opcionales:
 
-### 🟡 Nodos Disponibles (No implementados en el flujo actual)
-Estos nodos están definidos en el directorio `nodes/` y pueden ser utilizados para construir grafos más complejos o granulares:
+1.  **🧠 `agent`**: El cerebro del flujo. Razona sobre el objetivo, lee la memoria histórica y decide si invoca herramientas o genera la respuesta final.
+2.  **🛠️ `tools`**: El ejecutor. Procesa las llamadas a herramientas, maneja la lógica de **HITL (Human-In-The-Loop)** mediante interrupciones nativas de LangGraph y captura las observaciones para devolverlas al agente.
+3.  **📋 `plan`** *(opt-in: `enable_planning=True`)*: Aplica las señales `set_plan` / `update_step` que el modelo emite y mantiene el snapshot del plan.
+4.  **❓ `ask_user`** *(opt-in: `enable_user_questions=True`)*: Dispara la interrupción `question_request` para hacer preguntas estructuradas al usuario y espera la respuesta vía `set_resume_command()`.
 
-*   **`ManagerNode`**: Decide si una petición requiere planificación (orquestación) o puede responderse vía chat directo.
-*   **`PlannerNode`**: Descompone un objetivo complejo en un plan JSON estructurado de múltiples pasos.
-*   **`EvaluatorNode`**: Evalúa el éxito de cada paso ejecutado y determina si el objetivo global se ha cumplido.
-*   **`RetryNode`**: Analiza errores y decide estrategias de recuperación (reintentar con nuevos parámetros, cambiar de herramienta o escalar).
-*   **`ReporterNode`**: Genera una respuesta final amigable basada en el resumen de ejecución.
-*   **`SaveMemoryNode` / `LoadMemoryNode`**: Gestionan la persistencia de patrones aprendidos y resúmenes de sesión en archivos Markdown.
-*   **`RiskGateNode`**: Evaluación determinística de riesgos basada en niveles predefinidos.
-*   **`HumanApprovalNode`**: Gestiona la lógica de callbacks para aprobaciones manuales fuera del flujo de interrupciones de LangGraph.
+Con ambas opciones desactivadas, la topología es exactamente el ciclo ReAct clásico de dos nodos (`agent ⇄ tools`).
 
 ---
 

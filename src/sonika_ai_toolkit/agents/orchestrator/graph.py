@@ -5,7 +5,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -38,16 +38,6 @@ from sonika_ai_toolkit.skills import (
     merge_skill_tools,
     render_skills_prompt,
     resolve_skills,
-)
-from sonika_ai_toolkit.agents.extensions import (
-    DEFAULT_ROUTE,
-    END_NODE,
-    START_NODE,
-    CustomEdge,
-    CustomNode,
-    CustomRouter,
-    validate_custom_nodes,
-    validate_custom_wiring,
 )
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
@@ -124,12 +114,6 @@ class OrchestratorBot(IOrchestratorBot):
         max_retries: int = 3, # Kept for signature compatibility
         code_model: Optional[ILanguageModel] = None, # Kept for signature compatibility
         vision_model: Optional[ILanguageModel] = None, # Model used for image (vision) turns
-        on_human_approval: Optional[Callable[[Dict], bool]] = None, # Legacy
-        on_step_start: Optional[Callable[[Dict], None]] = None, # Legacy
-        on_step_end: Optional[Callable[[Dict, str], None]] = None, # Legacy
-        on_plan_generated: Optional[Callable[[List], None]] = None, # Legacy
-        on_thinking: Optional[Callable[[str], None]] = None, # Legacy
-        on_message: Optional[Callable[[str], None]] = None, # Legacy
         logger: Optional[logging.Logger] = None,
         prompts: Optional[Any] = None, # Legacy
         checkpointer: Any = None,
@@ -137,9 +121,6 @@ class OrchestratorBot(IOrchestratorBot):
         enable_planning: bool = False,
         skills: Optional[List[Skill]] = None,
         skills_dir: Optional[str] = None,
-        custom_nodes: Optional[List[CustomNode]] = None,
-        custom_edges: Optional[List[CustomEdge]] = None,
-        custom_routers: Optional[List[CustomRouter]] = None,
     ):
         self.model = strong_model
         # Model used for image (vision) turns. Falls back to the strong model so
@@ -147,13 +128,7 @@ class OrchestratorBot(IOrchestratorBot):
         # the orchestrator "see" images with a model of the caller's choosing.
         self.vision_model = vision_model or strong_model
         self.instructions = instructions
-        
-        # Callbacks (kept for backward compatibility with old scripts)
-        self.on_thinking = on_thinking
-        self.on_step_start = on_step_start
-        self.on_step_end = on_step_end
-        self.on_message = on_message
-        
+
         self.logger = logger or logging.getLogger(__name__)
         if logger is None:
             self.logger.addHandler(logging.NullHandler())
@@ -193,25 +168,6 @@ class OrchestratorBot(IOrchestratorBot):
                 if not self.registry.get(plan_tool.name):
                     self.registry.register(plan_tool)
                     self.tools.append(plan_tool)
-
-        self.custom_nodes = validate_custom_nodes(
-            custom_nodes, reserved_names={"agent", "tools", "plan", "ask_user"}
-        )
-
-        # Custom wiring (edges/routers) is validated against the node set that
-        # actually exists for THIS configuration (plan/ask_user are opt-in).
-        self._graph_node_names = {"agent", "tools"}
-        if self.enable_planning:
-            self._graph_node_names.add("plan")
-        if self.enable_user_questions:
-            self._graph_node_names.add("ask_user")
-        self._graph_node_names.update(c.name for c in self.custom_nodes)
-        self.custom_edges, self.custom_routers = validate_custom_wiring(
-            custom_edges,
-            custom_routers,
-            node_names=self._graph_node_names,
-            unwired_nodes={c.name for c in self.custom_nodes if c.position is None},
-        )
 
         self.model_with_tools = self.model.model.bind_tools(self.tools) if self.tools else self.model.model
         self.checkpointer = checkpointer or MemorySaver()
@@ -266,7 +222,6 @@ class OrchestratorBot(IOrchestratorBot):
 
             # Stream response to capture thinking
             accumulated_chunk = None
-            thinking_emitted = False
             retry_events: List[StatusEvent] = []
 
             def _record_retry(retry_state) -> None:
@@ -286,18 +241,9 @@ class OrchestratorBot(IOrchestratorBot):
                 reraise=True,
             )
             async def _call_model_stream():
-                nonlocal accumulated_chunk, thinking_emitted
+                nonlocal accumulated_chunk
                 accumulated_chunk = None
-                thinking_emitted = False
                 async for chunk in active_model.astream(messages):
-                    if isinstance(chunk.content, list):
-                        for part in chunk.content:
-                            if isinstance(part, dict) and part.get("type") == "thinking":
-                                t = part.get("thinking", "")
-                                if t:
-                                    thinking_emitted = True
-                                    if self.on_thinking:
-                                        self.on_thinking(t)
                     accumulated_chunk = chunk if accumulated_chunk is None else (accumulated_chunk + chunk)
 
             try:
@@ -322,9 +268,7 @@ class OrchestratorBot(IOrchestratorBot):
                 )
 
             new_thinking = extract_thinking(response)
-            if new_thinking and self.on_thinking and not thinking_emitted:
-                self.on_thinking(new_thinking)
-                
+
             accumulated_thinking = state.get("thinking", "")
             if new_thinking:
                 accumulated_thinking = (accumulated_thinking + "\n" + new_thinking).strip()
@@ -496,9 +440,6 @@ class OrchestratorBot(IOrchestratorBot):
                         continue
                         
                 # Execute tool
-                if self.on_step_start:
-                    self.on_step_start({"tool_name": tool_name, "params": tool_args})
-                    
                 try:
                     import asyncio
                     if hasattr(tool_instance, "ainvoke"):
@@ -515,10 +456,7 @@ class OrchestratorBot(IOrchestratorBot):
                         "status": "success",
                         "output": str(output)[:500]
                     })
-                    
-                    if self.on_step_end:
-                        self.on_step_end({"tool_name": tool_name, "params": tool_args}, str(output))
-                        
+
                 except Exception as e:
                     results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: {e}"))
                     tools_executed.append({
@@ -527,10 +465,7 @@ class OrchestratorBot(IOrchestratorBot):
                         "status": "error",
                         "output": str(e)
                     })
-                    
-                    if self.on_step_end:
-                        self.on_step_end({"tool_name": tool_name, "params": tool_args}, f"Error: {e}")
-            
+
             return {"messages": results, "tools_executed": tools_executed}
 
         def should_continue(state: OrchestratorState) -> str:
@@ -572,122 +507,25 @@ class OrchestratorBot(IOrchestratorBot):
         if self.enable_user_questions:
             workflow.add_node("ask_user", _wrap_node_traced("ask_user", ask_user_node))
 
-        # Consumer-provided custom nodes (see agents/extensions.py). With none,
-        # the wiring below is identical to the classic two-node ReAct graph.
-        start_nodes = [c for c in self.custom_nodes if c.position == "start"]
-        after_tools_nodes = [c for c in self.custom_nodes if c.position == "after_tools"]
-        end_nodes = [c for c in self.custom_nodes if c.position == "end"]
-        for custom in self.custom_nodes:
-            workflow.add_node(custom.name, _wrap_node_traced(custom.name, custom.node))
+        # ── Fixed wiring (classic ReAct graph) ─────────────────────────────
+        workflow.set_entry_point("agent")
 
-        # ── Default wiring spec (identical to the classic behavior) ────────
-        # Collected as data first so consumer CustomEdge/CustomRouter
-        # overrides can replace pieces before anything is emitted.
-        def _chain_pairs(nodes: List[CustomNode], target: str) -> List[tuple]:
-            pairs = [(prev.name, nxt.name) for prev, nxt in zip(nodes, nodes[1:])]
-            pairs.append((nodes[-1].name, target))
-            return pairs
-
-        entry_target = start_nodes[0].name if start_nodes else "agent"
-        fixed_edges: List[tuple] = []
-        if start_nodes:
-            fixed_edges += _chain_pairs(start_nodes, "agent")
-
-        end_target = end_nodes[0].name if end_nodes else END
-        if end_nodes:
-            fixed_edges += _chain_pairs(end_nodes, END)
-
-        agent_routes = {"tools": "tools", END: end_target}
+        agent_routes = {"tools": "tools", END: END}
         if self.enable_planning:
             agent_routes["plan"] = "plan"
         if self.enable_user_questions:
             agent_routes["ask_user"] = "ask_user"
-        routers: Dict[str, tuple] = {"agent": (should_continue, agent_routes)}
+        workflow.add_conditional_edges("agent", should_continue, agent_routes)
 
         if self.enable_planning:
             plan_routes = {"agent": "agent", "tools": "tools"}
             if self.enable_user_questions:
                 plan_routes["ask_user"] = "ask_user"
-            routers["plan"] = (route_after_plan, plan_routes)
+            workflow.add_conditional_edges("plan", route_after_plan, plan_routes)
         if self.enable_user_questions:
-            fixed_edges.append(("ask_user", "agent"))
+            workflow.add_edge("ask_user", "agent")
 
-        if after_tools_nodes:
-            fixed_edges.append(("tools", after_tools_nodes[0].name))
-            fixed_edges += _chain_pairs(after_tools_nodes, "agent")
-        else:
-            fixed_edges.append(("tools", "agent"))
-
-        # ── Consumer overrides: CustomEdge / CustomRouter ──────────────────
-        # Capture each overridden source's default decision BEFORE removal so
-        # a CustomRouter can delegate to it (return None / "__default__").
-        def _default_decider(source: str):
-            if source in routers:
-                fn, mapping = routers[source]
-                return lambda state, fn=fn, m=mapping: m.get(fn(state), fn(state))
-            if source == START_NODE:
-                return lambda state, t=entry_target: t
-            targets = [t for s, t in fixed_edges if s == source]
-            t0 = targets[0] if targets else END
-            return lambda state, t=t0: t
-
-        def _default_finals(source: str) -> List[str]:
-            """Every target the default decision of `source` can produce."""
-            if source in routers:
-                return list(routers[source][1].values())
-            if source == START_NODE:
-                return [entry_target]
-            return [t for s, t in fixed_edges if s == source] or [END]
-
-        deciders = {cr.source: _default_decider(cr.source) for cr in self.custom_routers}
-        finals = {cr.source: _default_finals(cr.source) for cr in self.custom_routers}
-
-        overridden = {ce.source for ce in self.custom_edges} | set(deciders)
-        fixed_edges = [(s, t) for s, t in fixed_edges if s not in overridden]
-        for source in overridden:
-            routers.pop(source, None)
-
-        for ce in self.custom_edges:
-            if ce.source == START_NODE:
-                entry_target = ce.target
-            else:
-                fixed_edges.append(
-                    (ce.source, END if ce.target == END_NODE else ce.target)
-                )
-
-        custom_conditional: Dict[str, tuple] = {}
-        for cr in self.custom_routers:
-            def _routed(state, _cr=cr, _decider=deciders[cr.source]):
-                out = _cr.router(state)
-                if out is None or out == DEFAULT_ROUTE:
-                    return _decider(state)
-                return out
-
-            # The path map declares the drawable conditional edges: the
-            # router's declared targets plus whatever the delegated default
-            # can produce, so delegation always stays routable.
-            declared = cr.targets if cr.targets is not None else sorted(
-                self._graph_node_names
-            ) + [END_NODE]
-            mapping = {t: (END if t == END_NODE else t) for t in declared}
-            for t in finals[cr.source]:
-                mapping.setdefault(t, t)
-            mapping.setdefault(END, END)
-            custom_conditional[cr.source] = (_routed, mapping)
-
-        # ── Emit the final wiring ───────────────────────────────────────────
-        if START_NODE in custom_conditional:
-            fn, mapping = custom_conditional.pop(START_NODE)
-            workflow.set_conditional_entry_point(fn, mapping)
-        else:
-            workflow.set_entry_point(entry_target)
-
-        for source, target in fixed_edges:
-            workflow.add_edge(source, target)
-        for source, (fn, mapping) in routers.items():
-            workflow.add_conditional_edges(source, fn, mapping)
-        for source, (fn, mapping) in custom_conditional.items():
-            workflow.add_conditional_edges(source, fn, mapping)
+        workflow.add_edge("tools", "agent")
 
         return workflow
 
@@ -738,9 +576,6 @@ class OrchestratorBot(IOrchestratorBot):
                 "step_events": [],
                 "node_trace": [],
             }
-            # Add backward compatibility for old scripts using callbacks
-            if self.on_message:
-                self.on_message(goal)
 
             stream_input = input_state
 

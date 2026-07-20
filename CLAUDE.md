@@ -117,9 +117,7 @@ tests/
 │   │       ├── test_contract.py      # Interface contract tests
 │   │       ├── test_graph.py         # agent/tools graph, partial responses
 │   │       ├── test_graph_planning.py # enable_planning: plan snapshot + step events + arun plan
-│   │       ├── test_custom_nodes.py  # custom node validation + wiring (start/after_tools/end)
 │   │       ├── test_node_events.py   # graph topology + node_invoked events + run_id/node_trace
-│   │       ├── test_custom_wiring.py # CustomEdge/CustomRouter overrides + validation
 │   │       ├── test_planning.py      # pure plan helpers (normalize/apply/render/split)
 │   │       ├── test_risk.py          # risk-gate helpers
 │   │       └── test_memory.py        # MemoryManager
@@ -302,8 +300,8 @@ delta by `_node_detail` (react.py). ReactBot's `stream_response` yields the
 same as `{"type": "graph"}` / `{"type": "node"}` chunks (its graph.stream now
 uses `stream_mode=["updates", "values"]`). Non-streaming (`run`/`arun`/
 `get_response`) return `BotResponse.node_trace` + `BotResponse.run_id`.
-Custom nodes are traced like built-ins. Topology comes from
-`compiled_graph.get_graph()` via `_graph_topology` (react.py).
+Topology comes from `compiled_graph.get_graph()` via `_graph_topology`
+(react.py).
 
 **Mode parameter:**
 - `"ask"` (default) — pauses on risky tool calls via LangGraph interrupt
@@ -331,29 +329,8 @@ return the final snapshot in `BotResponse.plan`. With
 are unchanged. Text-only `mode="plan"` is unaffected (planning protocol not
 appended there).
 
-**Custom nodes (`custom_nodes=[CustomNode(...)]`):**
-
-`CustomNode(name, node, position)` from `agents/extensions.py` injects
-consumer LangGraph nodes at `"start"` (entry → agent, once), `"after_tools"`
-(tools → agent edge, every loop) or `"end"` (agent final turn → END). Names
-`agent`/`tools`/`plan`/`ask_user` are reserved; multiple nodes at one position
-chain in list order; updates stream under the node's own name.
-`position=None` adds the node without auto-wiring (must be connected via
-custom wiring below).
-
-**Custom wiring (`custom_edges=[CustomEdge(...)]`, `custom_routers=[CustomRouter(...)]`):**
-
-Overrides the graph's wiring. `CustomEdge(source, target)` replaces the
-built-in outgoing edge/router of `source` (`"__start__"` overrides entry,
-`"__end__"` ends). `CustomRouter(source, router, targets)` replaces the
-conditional routing; the router returns a node name, `"__end__"`, or
-`None`/`DEFAULT_ROUTE` to delegate to the built-in decision (captured before
-removal in `_build_workflow` — default wiring is built as a data spec
-first, then overrides are applied, then edges are emitted). One router per
-source. Validation (`validate_custom_wiring` in extensions.py) runs at
-construction against the actual node set (plan/ask_user only when enabled);
-`position=None` nodes must be referenced by the wiring. Tests:
-`test_custom_wiring.py`.
+The graph wiring is fixed (built in `_build_workflow`) and not customizable
+by consumers — there is no mechanism to inject nodes or override node routing.
 
 **Skills (both bots — `skills=[Skill, ...]` and/or `skills_dir="./skills"`):**
 
@@ -426,7 +403,7 @@ from sonika_ai_toolkit import (
     # Agent interfaces
     IBot, IConversationBot,
     # Skills + custom nodes + wiring overrides
-    Skill, load_skills, CustomNode, CustomEdge, CustomRouter, DEFAULT_ROUTE,
+    Skill, load_skills,
     # Stream event types
     AgentUpdate, ToolsUpdate, ToolRecord, StatusEvent, PartialResponseEvent,
     PlanStep, StepEvent,

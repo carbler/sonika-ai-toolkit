@@ -90,20 +90,19 @@ def test_orchestratorbot_anthropic(anthropic_model):
 
 
 @pytest.mark.e2e
-def test_orchestratorbot_thinking_callback(openai_model):
-    """on_thinking callback fires during execution (no crash expected)."""
-    thinking_chunks: list[str] = []
-
+def test_orchestratorbot_thinking_surfaced(openai_model):
+    """Thinking is surfaced via BotResponse.thinking (modern API, no callbacks)."""
     bot = OrchestratorBot(
         strong_model=openai_model,
         fast_model=openai_model,
         instructions=INSTRUCTIONS,
         tools=[EmailTool(), SaveContacto()],
         memory_path="/tmp/e2e_orch_thinking",
-        on_thinking=lambda chunk: thinking_chunks.append(chunk),
     )
     result = bot.run(GOAL)
     assert result.content.strip(), "content must not be empty"
+    # thinking is Optional (None for non-reasoning models) — just must be accessible.
+    assert result.thinking is None or isinstance(result.thinking, str)
 
 
 @pytest.mark.e2e

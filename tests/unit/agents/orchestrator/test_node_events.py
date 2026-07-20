@@ -7,7 +7,6 @@ Covers:
   - run_id: unique per run (date-prefixed, never repeats), consistent across
     topology, node events and BotResponse
   - arun/run: BotResponse.node_trace + BotResponse.run_id
-  - custom nodes appear in both topology and node events
 
 Uses mocked LLM — no API keys needed.
 """
@@ -19,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from langchain_core.messages import AIMessage, AIMessageChunk
 
-from sonika_ai_toolkit.agents.extensions import CustomNode
 from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
 
 RUN_ID_RE = re.compile(r"^\d{8}T\d{12}-[0-9a-f]{32}$")
@@ -117,15 +115,6 @@ class TestGraphTopology:
             for e in topo["edges"]
         )
 
-    def test_topology_includes_custom_nodes(self):
-        bot = _make_bot(
-            _final_only_model(),
-            custom_nodes=[CustomNode(name="audit", node=lambda s: {}, position="start")],
-        )
-        topo = bot.get_graph_topology()
-        assert "audit" in topo["nodes"]
-        assert topo["entry"] == "audit"
-
 
 @pytest.mark.asyncio
 class TestStreamGraphEvents:
@@ -161,15 +150,6 @@ class TestStreamGraphEvents:
         second = _graph_events(await _collect_events(bot), "graph_topology")[0]
         assert first["run_id"] != second["run_id"]
 
-    async def test_custom_node_emits_node_invoked(self):
-        bot = _make_bot(
-            _final_only_model(),
-            custom_nodes=[CustomNode(name="audit", node=lambda s: {}, position="start")],
-        )
-        events = await _collect_events(bot)
-        invoked = _graph_events(events, "node_invoked")
-        assert [ev["node"] for ev in invoked][:2] == ["audit", "agent"]
-
     async def test_updates_stream_still_emitted(self):
         """Backward compat: existing consumers of "updates" keep working."""
         bot = _make_bot(_final_only_model())
@@ -199,14 +179,6 @@ class TestNodeTraceInResponse:
         r1 = await bot.arun("Hola")
         r2 = await bot.arun("Hola")
         assert r1.run_id != r2.run_id
-
-    async def test_custom_node_recorded_in_trace(self):
-        bot = _make_bot(
-            _final_only_model(),
-            custom_nodes=[CustomNode(name="audit", node=lambda s: {}, position="start")],
-        )
-        result = await bot.arun("Hola")
-        assert [e["node"] for e in result.node_trace][:2] == ["audit", "agent"]
 
 
 def _planning_model():
