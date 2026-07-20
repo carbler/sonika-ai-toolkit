@@ -1,9 +1,9 @@
 """AskUserQuestion — a *signal* tool that lets an agent ask the caller questions.
 
-This tool performs no action. Both ReactBot and OrchestratorBot intercept the
-call and surface the structured questions to the UI (via ``BotResponse.questions``
-or a LangGraph interrupt) instead of running ``_run``. The ``_run`` body is only a
-safe fallback for any path that does execute it (returns a readable summary).
+This tool performs no action. OrchestratorBot intercepts the call and surfaces
+the structured questions to the UI (via a LangGraph interrupt) instead of
+running ``_run``. The ``_run`` body is only a safe fallback for any path that
+does execute it (returns a readable summary).
 """
 
 from typing import List, Optional, Type

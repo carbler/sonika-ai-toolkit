@@ -1,4 +1,3 @@
-from sonika_ai_toolkit.agents.react import ReactBot
 from sonika_ai_toolkit.agents.orchestrator.graph import OrchestratorBot
 
 try:
@@ -9,7 +8,6 @@ except ImportError:
     _has_think = False
 
 __all__ = [
-    "ReactBot",
     "ThinkBot",
     "OrchestratorBot",
 ]

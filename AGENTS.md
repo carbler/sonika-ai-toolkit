@@ -15,14 +15,14 @@ The goal is to provide a standardized, scalable framework for banking and custom
 
 ## 🤖 Bot Architectures
 
-### `ReactBot` (Standard Agent)
-*   **Path**: `src/sonika_ai_toolkit/agents/react.py`
-*   **Architecture**: Uses `LangGraph` state graph (`agent` -> `tools` -> `agent`).
+### `OrchestratorBot` (Autonomous Agent)
+*   **Path**: `src/sonika_ai_toolkit/agents/orchestrator/graph.py`
+*   **Architecture**: Uses `LangGraph` state graph — `agent` -> `tools` -> `agent`, plus opt-in `plan` / `ask_user` nodes.
 *   **Key Components**:
-    *   `ChatState`: TypedDict managing messages, logs, and token usage.
-    *   `_InternalToolLogger`: Custom callback handler for tool execution tracking.
+    *   `OrchestratorState`: TypedDict managing messages, plan, node_trace, and status events.
+    *   `_graph_helpers.py`: Shared graph/message helpers (tracing, topology, thinking extraction, run-id).
     *   `ILanguageModel`: Unified interface for model switching.
-*   **Features**: Streaming response, native tool calling, robust error handling, and token usage tracking.
+*   **Features**: Async streaming, persistent memory, native LangGraph interrupts, rate-limit retry with progress events, and token usage tracking.
 
 ---
 
@@ -73,7 +73,7 @@ This project implements a unified `ILanguageModel` interface in `src/sonika_ai_t
     *Use absolute imports for local modules.*
 *   **Formatting**: Strictly follow PEP 8. Use 4 spaces for indentation. Use double blank lines between classes and top-level functions. Limit line length to 88-100 characters.
 *   **Naming**: 
-    *   Classes: `PascalCase` (e.g., `ReactBot`).
+    *   Classes: `PascalCase` (e.g., `OrchestratorBot`).
     *   Functions/Variables: `snake_case` (e.g., `get_response`).
     *   Constants: `UPPER_SNAKE_CASE` (e.g., `DEFAULT_TEMPERATURE`).
     *   Private members: Prefix with underscore (e.g., `_internal_method`).
@@ -95,7 +95,7 @@ This project implements a unified `ILanguageModel` interface in `src/sonika_ai_t
 *   **Validation**: Use Pydantic's `BaseModel` for structured input/output validation. Ensure all inputs to the bot are validated before processing.
 
 ### 4. Common Gotchas
-*   **Gemini Message Order**: Gemini requires a specific message order (System, then User/AI pairs). Check `agents/react.py` for how this is handled.
+*   **Gemini Message Order**: Gemini requires a specific message order (System, then User/AI pairs). Check `agents/orchestrator/graph.py` for how this is handled.
 *   **State Persistence**: `LangGraph` requires a `checkpointer` (e.g., `MemorySaver`) to maintain state between turns.
 *   **Package Path**: When running tests, ensure `src` is in `PYTHONPATH` or use `pip install -e .`.
 
@@ -115,7 +115,7 @@ This project implements a unified `ILanguageModel` interface in `src/sonika_ai_t
 
 *   `src/sonika_ai_toolkit/`: Core library code.
     *   `agents/`: Bot implementations.
-        *   `react.py`: Main `ReactBot` implementation.
+        *   `orchestrator/graph.py`: Main `OrchestratorBot` implementation.
     *   `classifiers/`: Text classification tools.
     *   `document_processing/`: PDF and document tools.
     *   `tools/`: Tool definitions.

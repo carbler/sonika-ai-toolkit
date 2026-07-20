@@ -33,7 +33,7 @@ pytest tests/unit/utilities/test_models.py::TestOpenAILanguageModel::test_init_d
 pytest tests/unit/agents/orchestrator/test_contract.py -v
 
 # Run the model/agent benchmark (real API keys — standalone, not pytest)
-python benchmarks/run.py --agents react --models openai:gpt-4o-mini
+python benchmarks/run.py --agents orchestrator --models openai:gpt-4o-mini
 python benchmarks/run.py --list   # discover agents / providers / scenarios
 
 # Lint
@@ -71,7 +71,7 @@ The project uses **MkDocs Material** for documentation, hosted on GitHub Pages.
 docs/
 ├── index.md               # Overview + quick example + navigation links
 ├── getting-started.md     # Installation, API keys, first agent, first classifier
-├── agents.md              # ReactBot, OrchestratorBot (modes, streaming, BotResponse)
+├── agents.md              # OrchestratorBot (modes, streaming, BotResponse)
 ├── classifiers.md         # TextClassifier, Intent, Sentiment, Safety, Image — with examples
 ├── models.md              # OpenAI, Gemini, DeepSeek, Bedrock — config + gotchas
 ├── tools.md               # 18 built-in tools + custom tool creation with Pydantic
@@ -123,7 +123,6 @@ tests/
 │   ├── skills/
 │   │   └── test_loader.py            # Skill.from_dir, load_skills, merge/render helpers
 │   ├── agents/
-│   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow + skills
 │   │   └── orchestrator/
 │   │       ├── test_contract.py      # Interface contract tests
 │   │       ├── test_graph.py         # agent/tools graph, partial responses
@@ -135,10 +134,8 @@ tests/
 │   └── document_processing/
 │       └── test_processor.py         # DocumentProcessor (tokens, extract, chunks)
 ├── integration/         # Tests with mocked component interaction
-│   └── test_reactbot_flow.py
 ├── e2e/                 # Real API calls, skip if key missing
 │   ├── conftest.py      # ← MODEL CONFIGURATION (change model name here)
-│   ├── test_reactbot.py
 │   ├── test_orchestratorbot.py
 │   └── test_classifiers.py           # Classifier e2e tests (10 tests)
 └── fixtures/            # Custom test fixtures (if needed)
@@ -182,8 +179,8 @@ All agents share a common ABC lineage:
 
 ```
 IBot (ABC)
-│     abort() → None          # stop the in-flight streaming run (both bots)
-├── IConversationBot    — ReactBot
+│     abort() → None          # stop the in-flight streaming run
+├── IConversationBot    — stateless conversational contract (no concrete impl)
 │     get_response(user_input, messages, logs) → BotResponse
 └── IOrchestratorBot    — OrchestratorBot
       astream_events(goal, mode, thread_id) → AsyncGenerator
@@ -202,7 +199,6 @@ All agents return a `BotResponse` — a `dict` subclass fully backward-compatibl
 ```python
 from sonika_ai_toolkit.utilities.types import BotResponse
 
-result = bot.get_response(...)   # ReactBot
 result = bot.run(...)            # OrchestratorBot
 
 # dict-style (existing code unchanged)
@@ -259,11 +255,7 @@ Import these types in consumers instead of hardcoding dict keys.
 
 ### Agents (`src/sonika_ai_toolkit/agents/`)
 
-Two architectures for different use cases:
-
-1. **ReactBot** (`react.py`): Standard ReAct loop via LangGraph. Implements `IConversationBot`. Handles tool execution, token tracking, `_InternalToolLogger` callback. Returns `BotResponse`.
-
-2. **OrchestratorBot** (`orchestrator/`): Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API. Implements `IOrchestratorBot`.
+**OrchestratorBot** (`orchestrator/`): Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API. Implements `IOrchestratorBot`. Shared graph/message helpers live in `orchestrator/_graph_helpers.py`.
 
 ### OrchestratorBot — How it works
 
@@ -296,12 +288,12 @@ Each `run(goal)` call:
 - `bot.get_graph_topology()` — static node/edge layout of the compiled graph
 - `memory_path` — directory for MEMORY.md and session logs
 
-**Graph topology + node events (both bots):**
+**Graph topology + node events:**
 
 Every run gets a unique `run_id` (UTC timestamp + full UUID4 — never repeats).
-All graph nodes are wrapped by `_wrap_node_traced` (react.py) so each execution
-appends to the `node_trace` state channel (`operator.add`). OrchestratorBot's
-`astream_events` yields a third stream mode `"graph"`: first a
+All graph nodes are wrapped by `_wrap_node_traced` (`orchestrator/_graph_helpers.py`)
+so each execution appends to the `node_trace` state channel (`operator.add`).
+OrchestratorBot's `astream_events` yields a third stream mode `"graph"`: first a
 `GraphTopologyEvent` (only when a `goal` starts a new run), then one
 `NodeInvokedEvent` per node execution (synthesized from the `"updates"`
 payloads; `run_id`/`ts`/`detail` come from the node's `node_trace` delta so
@@ -309,12 +301,10 @@ they stay consistent across interrupt resumes). Each event carries a `detail`
 (`NodeDetail`) with the node's params/output — `tool_calls` (name+args
 requested), `tools_executed` (args + truncated output), `output` (text),
 `plan`/`step_events`/`questions` — built generically from the node's state
-delta by `_node_detail` (react.py). ReactBot's `stream_response` yields the
-same as `{"type": "graph"}` / `{"type": "node"}` chunks (its graph.stream now
-uses `stream_mode=["updates", "values"]`). Non-streaming (`run`/`arun`/
-`get_response`) return `BotResponse.node_trace` + `BotResponse.run_id`.
+delta by `_node_detail` (`orchestrator/_graph_helpers.py`). Non-streaming
+(`run`/`arun`) return `BotResponse.node_trace` + `BotResponse.run_id`.
 Topology comes from `compiled_graph.get_graph()` via `_graph_topology`
-(react.py).
+(`orchestrator/_graph_helpers.py`).
 
 **Mode parameter:**
 - `"ask"` (default) — pauses on risky tool calls via LangGraph interrupt
@@ -350,14 +340,24 @@ by consumers — there is no mechanism to inject nodes or override node routing.
 Folder-based capability packs (`src/sonika_ai_toolkit/skills/loader.py`): each
 subfolder has a `SKILL.md` (optional `---` frontmatter `name:`/`description:`;
 body = instructions) and optional `tools.py` (BaseTool subclasses defined in
-the file are instantiated — imported classes ignored). Instructions render as
-a `## SKILLS` block appended to the system prompt (ReactBot
-`_build_system_prompt`, Orchestrator `agent_node`);
-tools merge into the bot's list **before** bind_tools, deduped by name with
-explicitly-passed tools winning. Broken skills are logged and skipped.
-`tools.py` executes arbitrary Python — only trusted directories. NOTE:
-OrchestratorBot's `self.skills_dir` *attribute* (memory-derived, for
-DynamicToolSynthesizer) is unrelated to the `skills_dir` constructor param.
+the file are instantiated — imported classes ignored). Skill instructions
+render as a `## SKILLS` block appended to the system prompt (Orchestrator
+`agent_node`); skill tools merge into the bot's list **before** bind_tools,
+deduped by name with explicitly-passed tools winning. Broken skills are logged and skipped. `tools.py` executes arbitrary
+Python — only trusted directories.
+
+**On-demand by default (progressive disclosure, `skills_eager=False`):** the
+`## SKILLS` block is a lightweight `- name — description` **index** only
+(`render_skills_index` in loader.py), and a built-in `load_skill` tool
+(`tools/skill_tools.py`, `make_load_skill_tool`, `risk_level=0`) is registered
+so the model calls `load_skill("<name>")` to pull a single skill's full body on
+demand — it flows through the normal `tools_node`, returns the body (plus the
+skill's `path` for bundled files), and the loop continues. Unrelated requests
+never pay for skill bodies. Pass **`skills_eager=True`** to restore the legacy
+behavior: every skill's full body injected on every turn (`render_skills_prompt`)
+and no `load_skill` tool. NOTE: OrchestratorBot's `self.skills_dir` *attribute*
+(memory-derived, for DynamicToolSynthesizer) is unrelated to the `skills_dir`
+constructor param.
 
 **Retry with rate-limit events:**
 

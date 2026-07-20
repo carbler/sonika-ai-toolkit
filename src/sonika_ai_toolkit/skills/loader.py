@@ -123,6 +123,30 @@ def render_skills_prompt(skills: List[Skill]) -> str:
     return "\n\n".join(blocks)
 
 
+def render_skills_index(skills: List[Skill]) -> str:
+    """Render a lightweight skills index (name + description only).
+
+    Progressive-disclosure counterpart of :func:`render_skills_prompt`: instead
+    of injecting every skill's full body on every turn, this emits just one
+    ``- name — description`` line per skill and tells the model to call the
+    ``load_skill`` tool to fetch a skill's full instructions on demand.
+    """
+    if not skills:
+        return ""
+    blocks = [
+        "## SKILLS",
+        "You have the following skills available. When a request relates to one, "
+        "call the `load_skill` tool with its exact name to load its full "
+        "instructions BEFORE acting. Only load a skill when it is relevant.",
+    ]
+    for skill in skills:
+        line = f"- {skill.name}"
+        if skill.description:
+            line += f" — {skill.description}"
+        blocks.append(line)
+    return "\n\n".join(blocks[:2]) + "\n" + "\n".join(blocks[2:])
+
+
 def merge_skill_tools(base_tools: List[BaseTool], skills: List[Skill]) -> List[BaseTool]:
     """Merge skill tools into ``base_tools``, deduplicating by tool name.
 

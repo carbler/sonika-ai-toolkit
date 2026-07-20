@@ -95,7 +95,7 @@ class WeatherTool(BaseTool):
         return f"Weather in {city}: 22°C, sunny"
 
 # Use with any agent
-bot = ReactBot(llm, instructions="...", tools=[WeatherTool()])
+bot = OrchestratorBot(strong_model=llm, fast_model=llm, instructions="...", tools=[WeatherTool()])
 ```
 
 !!! important "args_schema required"

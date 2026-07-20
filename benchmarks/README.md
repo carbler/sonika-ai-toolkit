@@ -1,6 +1,6 @@
 # Benchmarks
 
-A standalone harness to compare **agents** (ReactBot, OrchestratorBot)
+A standalone harness to compare **agents** (OrchestratorBot)
 and **models** (OpenAI, Gemini, DeepSeek, Anthropic) under **measurable,
 reproducible** conditions. It is **not** part of the pytest suite — it makes real
 API calls and needs keys.
@@ -20,15 +20,15 @@ alone*. That's what makes results comparable across models and agents.
 ## Usage
 
 ```bash
-# One agent, one model (defaults: react × openai:gpt-4o-mini × all scenarios)
+# One agent, one model (defaults: orchestrator × openai:gpt-4o-mini × all scenarios)
 python benchmarks/run.py
 
 # Compare several models on the same agent
 python benchmarks/run.py --models openai:gpt-4o-mini,anthropic:claude-haiku-4-5
 
-# Full matrix: every agent × two models
+# Full matrix: agent × two models
 python benchmarks/run.py \
-    --agents react,orchestrator \
+    --agents orchestrator \
     --models openai:gpt-4o-mini,gemini:gemini-2.5-flash
 
 # Run a subset of scenarios
@@ -81,6 +81,5 @@ benchmarks/
   `tools/support_tools.py`; keep `_run` deterministic.
 
 ### Note on tool-arg checks
-Tool-call accuracy is **name-based** on purpose: ReactBot's `tools_executed`
-records don't include call `args`, while OrchestratorBot does. Scoring on
-names keeps the comparison fair across both agents.
+Tool-call accuracy is **name-based** on purpose: scoring on tool names (not
+`args`) keeps the comparison fair and stable across models.

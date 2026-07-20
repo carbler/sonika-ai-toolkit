@@ -1,13 +1,13 @@
-"""Structured user-questions contract shared by ReactBot and OrchestratorBot.
+"""Structured user-questions contract for OrchestratorBot.
 
 Lets an agent ask the caller *structured* questions (that a UI can render as
 inputs, radio buttons, checkboxes…) instead of burying a question in free text.
 
 The ``AskUserQuestion`` tool (``tools/ask_user.py``) carries the :class:`AskUserSchema`
-schema.  Both bots intercept the tool call and surface the questions to the
-consumer — ReactBot via ``BotResponse.questions`` / ``needs_input``, OrchestratorBot
-via a native LangGraph interrupt (``type == "question_request"``) — instead of
-executing any action.  This module is the single source of truth for that shape.
+schema.  OrchestratorBot intercepts the tool call and surfaces the questions to
+the consumer via a native LangGraph interrupt (``type == "question_request"``) —
+instead of executing any action.  This module is the single source of truth for
+that shape.
 """
 
 from typing import Any, Dict, List, Literal, Optional

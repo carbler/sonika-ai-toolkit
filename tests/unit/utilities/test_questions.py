@@ -1,7 +1,7 @@
 """Unit tests for the structured user-questions contract (utilities.questions).
 
 Covers the shared schema, payload normalization, and human-readable summary
-used by both ReactBot and OrchestratorBot for the ask_user feature.
+used by OrchestratorBot for the ask_user feature.
 """
 
 from sonika_ai_toolkit.utilities.questions import (

@@ -22,14 +22,14 @@ class IBot(ABC):
         and then stops; the underlying graph run is genuinely halted (streaming
         is pull-driven). A node already executing is not cancelled mid-run — the
         cut applies at the next boundary. The flag resets at the start of every
-        run. Does not affect non-streaming paths (get_response/run/arun).
+        run. Does not affect non-streaming paths (run/arun).
         """
         ...
 
 
 class IConversationBot(IBot):
     """
-    Contract for stateless conversational agents (ReactBot).
+    Contract for stateless conversational agents.
     Input: message + history.  Output: BotResponse.
     """
 

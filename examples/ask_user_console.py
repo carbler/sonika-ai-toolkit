@@ -1,10 +1,8 @@
 """Reference UI for structured user questions (`ask_user`).
 
 A minimal console "interface" that renders the questions an agent emits and
-collects typed answers. It shows both flows:
-
-  * ReactBot        — stateless: the turn ends, we re-ask with the answers.
-  * OrchestratorBot — stateful: the run pauses on an interrupt and resumes.
+collects typed answers. It shows the OrchestratorBot flow — stateful: the run
+pauses on an interrupt and resumes.
 
 The `render_and_collect()` function is the only UI-specific piece — swap it for
 a web form, chat widget, or mobile screen. Everything else is library API.
@@ -17,8 +15,6 @@ import asyncio
 import os
 
 from sonika_ai_toolkit import OrchestratorBot, OpenAILanguageModel
-from sonika_ai_toolkit.agents.react import ReactBot
-from sonika_ai_toolkit.utilities.types import Message
 
 
 # ── The UI layer (the only part you replace for web/mobile) ─────────────────
@@ -52,42 +48,6 @@ def render_and_collect(questions: list, reason: str | None = None) -> dict:
             answers[q["id"]] = input("   > ").strip()
 
     return answers
-
-
-# ── ReactBot flow (stateless) ───────────────────────────────────────────────
-
-def demo_reactbot(lm) -> None:
-    print("\n" + "=" * 60)
-    print("ReactBot — stateless questions")
-    print("=" * 60)
-
-    bot = ReactBot(
-        language_model=lm,
-        instructions=(
-            "Eres un asistente de reservas. Si te falta información para reservar "
-            "(destino, fechas, número de personas), usa la herramienta ask_user "
-            "con preguntas estructuradas y opciones cuando aplique."
-        ),
-        enable_user_questions=True,
-    )
-
-    history: list = []
-    user_input = "Quiero reservar un viaje"
-
-    # Loop until the agent stops asking and gives a final answer.
-    for _ in range(5):
-        result = bot.get_response(user_input=user_input, messages=history)
-        history.append(Message(is_bot=False, content=user_input))
-
-        if result.needs_input:
-            answers = render_and_collect(result.questions)
-            # Feed the answers back as the next user turn.
-            history.append(Message(is_bot=True, content=result.content))
-            user_input = f"Respuestas: {answers}"
-            continue
-
-        print(f"\n✅ {result.content}")
-        break
 
 
 # ── OrchestratorBot flow (stateful, resumes the same run) ────────────────────
@@ -137,7 +97,6 @@ def main() -> None:
         raise SystemExit("Set OPENAI_API_KEY to run this example.")
     lm = OpenAILanguageModel(api_key, model_name="gpt-4o-mini", temperature=0)
 
-    demo_reactbot(lm)
     asyncio.run(demo_orchestrator(lm))
 
 

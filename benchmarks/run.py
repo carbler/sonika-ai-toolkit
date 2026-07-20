@@ -6,12 +6,12 @@ Examples
     # One agent, one model (defaults)
     python benchmarks/run.py
 
-    # Compare several models on ReactBot
+    # Compare several models on OrchestratorBot
     python benchmarks/run.py --models openai:gpt-4o-mini,anthropic:claude-haiku-4-5
 
     # Full matrix: every agent × two models
     python benchmarks/run.py \
-        --agents react,orchestrator \
+        --agents orchestrator \
         --models openai:gpt-4o-mini,gemini:gemini-2.5-flash
 
 Model spec is ``provider:model_name`` (provider alone uses a default model).
@@ -49,7 +49,7 @@ def _csv(value: str) -> list:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--agents", type=_csv, default=["react"],
+    parser.add_argument("--agents", type=_csv, default=["orchestrator"],
                         help=f"Comma-separated agents to run. Options: {','.join(AGENT_KINDS)}")
     parser.add_argument("--models", type=_csv, default=["openai:gpt-4o-mini"],
                         help="Comma-separated model specs 'provider:model_name'.")

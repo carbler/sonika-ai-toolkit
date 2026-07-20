@@ -72,10 +72,9 @@ class GraphEdgeSpec(TypedDict):
 class GraphTopologyEvent(TypedDict):
     """First event of a run: the full node/edge layout of the compiled graph.
 
-    Emitted as ``("graph", payload)`` by ``OrchestratorBot.astream_events`` and
-    as ``{"type": "graph", ...}`` by ``ReactBot.stream_response`` so consumers
-    can draw the graph before any node runs.  Nodes include the virtual
-    ``__start__`` / ``__end__`` markers.
+    Emitted as ``("graph", payload)`` by ``OrchestratorBot.astream_events`` so
+    consumers can draw the graph before any node runs.  Nodes include the
+    virtual ``__start__`` / ``__end__`` markers.
     """
     type: Literal["graph_topology"]
     run_id: str        # unique id of this run (process)
@@ -93,7 +92,7 @@ class NodeDetail(TypedDict, total=False):
       output         — text the node emitted (truncated to 500 chars)
       plan           — plan snapshot after this node (plan node)
       step_events    — step transitions of this node (plan node)
-      questions      — structured questions raised (ask_user node, ReactBot)
+      questions      — structured questions raised (ask_user node)
     """
     tool_calls: List[Dict[str, Any]]
     tools_executed: List[Dict[str, Any]]
@@ -106,10 +105,10 @@ class NodeDetail(TypedDict, total=False):
 class NodeInvokedEvent(TypedDict):
     """A signal that one graph node just executed.
 
-    Emitted as ``("graph", payload)`` (OrchestratorBot) / ``{"type": "node"}``
-    (ReactBot) once per node execution, in order — replay them over the
-    topology to animate the path the bot took. ``detail`` carries the node's
-    params/output summary.
+    Emitted as ``("graph", payload)`` by ``OrchestratorBot.astream_events``
+    once per node execution, in order — replay them over the topology to
+    animate the path the bot took. ``detail`` carries the node's params/output
+    summary.
     """
     type: Literal["node_invoked"]
     run_id: str
@@ -122,9 +121,9 @@ class NodeInvokedEvent(TypedDict):
 class AbortedEvent(TypedDict):
     """Emitted when a run is stopped early by ``bot.abort()``.
 
-    Yielded as ``("graph", payload)`` by ``OrchestratorBot.astream_events`` and
-    as ``{"type": "aborted", ...}`` by ``ReactBot.stream_response``, right before
-    the stream stops. It is the last event of an aborted run. State up to the
+    Yielded as ``("graph", payload)`` by ``OrchestratorBot.astream_events``,
+    right before the stream stops. It is the last event of an aborted run.
+    State up to the
     last completed node is preserved in the checkpointer (``thread_id``); work
     in progress at the moment of abort is discarded.
     """

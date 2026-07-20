@@ -36,9 +36,11 @@ from sonika_ai_toolkit.tools.plan_tools import (
 from sonika_ai_toolkit.skills import (
     Skill,
     merge_skill_tools,
+    render_skills_index,
     render_skills_prompt,
     resolve_skills,
 )
+from sonika_ai_toolkit.tools.skill_tools import make_load_skill_tool
 from sonika_ai_toolkit.agents.orchestrator.state import OrchestratorState
 from sonika_ai_toolkit.agents.orchestrator.memory import MemoryManager
 from sonika_ai_toolkit.agents.orchestrator.events import StatusEvent
@@ -50,9 +52,10 @@ from sonika_ai_toolkit.agents.orchestrator.planning import (
     split_plan_signal_calls,
 )
 from sonika_ai_toolkit.agents.orchestrator.interface import IOrchestratorBot
-from sonika_ai_toolkit.agents.react import (
+from sonika_ai_toolkit.agents.orchestrator._graph_helpers import (
     extract_thinking,
     _has_image_content,
+    _build_history_messages,
     _build_user_message,
     _graph_topology,
     _new_run_id,
@@ -83,6 +86,21 @@ def _extract_text_content(response) -> str:
                 parts.append(str(p.get("text", "") or p.get("content", "")))
         text = "".join(parts)
     return str(text).strip()
+
+
+def _initial_messages(goal, images=None, history=None, context: str = ""):
+    """Build the initial message list for a run.
+
+    Prepends the caller-supplied conversation ``history`` (so the orchestrator
+    receives an externally-managed conversation, like a chat backend does),
+    then an optional free-text ``context`` block, then the current ``goal`` as
+    the user turn.
+    """
+    messages = _build_history_messages(history)
+    if context:
+        messages.append(SystemMessage(content=context))
+    messages.append(_build_user_message(goal, images))
+    return messages
 
 
 def _last_tool_call_message(messages) -> Optional[AIMessage]:
@@ -121,6 +139,7 @@ class OrchestratorBot(IOrchestratorBot):
         enable_planning: bool = False,
         skills: Optional[List[Skill]] = None,
         skills_dir: Optional[str] = None,
+        skills_eager: bool = False,
     ):
         self.model = strong_model
         # Model used for image (vision) turns. Falls back to the strong model so
@@ -143,13 +162,28 @@ class OrchestratorBot(IOrchestratorBot):
         # prompt; skill tools are merged into the tool list (explicitly-passed
         # tools win on name collision).
         self.skills = resolve_skills(skills, skills_dir)
-        self._skills_prompt = render_skills_prompt(self.skills)
+        # skills_eager=False (default): progressive disclosure — only a
+        # name+description index goes in the prompt and the model calls the
+        # load_skill tool to fetch a skill's full body on demand. True injects
+        # every skill's full body on every turn (legacy, costs more tokens).
+        if self.skills and not skills_eager:
+            self._skills_prompt = render_skills_index(self.skills)
+        else:
+            self._skills_prompt = render_skills_prompt(self.skills)
 
         self.registry = ToolRegistry()
         self.tools = []
         for tool in merge_skill_tools(list(tools or []), self.skills):
             self.registry.register(tool)
             self.tools.append(tool)
+
+        # On-demand skills: register the load_skill tool so the model can pull a
+        # single skill's instructions into the conversation when relevant.
+        if self.skills and not skills_eager:
+            load_tool = make_load_skill_tool(self.skills)
+            if not self.registry.get(load_tool.name):
+                self.registry.register(load_tool)
+                self.tools.append(load_tool)
 
         # Register the structured-question tool so the model can pause and ask the
         # caller via a native LangGraph interrupt (see tools_node interception).
@@ -544,10 +578,16 @@ class OrchestratorBot(IOrchestratorBot):
         """
         return _graph_topology(self.graph)
 
-    async def astream_events(self, goal: str, mode: str = "ask", thread_id: str = None, images: Optional[List[str]] = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def astream_events(self, goal: str, mode: str = "ask", thread_id: str = None, images: Optional[List[str]] = None, history: Optional[List[Any]] = None, context: str = "") -> AsyncGenerator[Dict[str, Any], None]:
         """
         New Streaming API that yields typed events, completely decoupling logic from the UI.
         If `goal` is None/empty, it assumes we are resuming an interrupted state (from `Command`).
+
+        ``history`` lets the caller pass a prior conversation (the caller owns it,
+        e.g. from a DB): a list of LangChain messages, sonika ``Message`` objects,
+        or ``{"role", "content"}`` dicts. It is prepended before the ``goal`` so
+        the model has the full context. ``context`` is an optional free-text block
+        added after the history.
 
         Besides LangGraph's ``("messages", …)`` / ``("updates", …)`` tuples,
         yields a third stream mode ``"graph"``:
@@ -570,7 +610,7 @@ class OrchestratorBot(IOrchestratorBot):
             input_state = {
                 "goal": goal,
                 "mode": mode,
-                "messages": [_build_user_message(goal, images)],
+                "messages": _initial_messages(goal, images, history, context),
                 "session_id": current_thread,
                 "run_id": run_id,
                 "skills_dir": self.skills_dir,
@@ -630,10 +670,16 @@ class OrchestratorBot(IOrchestratorBot):
             # Yield structured events for the CLI
             yield (stream_mode, payload)
 
-    async def arun(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
+    async def arun(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None, history: Optional[List[Any]] = None) -> BotResponse:
         """
-        Legacy Async API for compatibility with `chat.py`.
-        Consumes the stream silently until the end, ignoring interrupts (auto mode).
+        Async API. Consumes the stream silently until the end, ignoring
+        interrupts (auto mode).
+
+        ``history`` passes a prior conversation (list of LangChain messages,
+        sonika ``Message`` objects, or ``{"role", "content"}`` dicts) that is
+        prepended before the ``goal``; ``context`` is an optional free-text block
+        added after it. Together they let the orchestrator answer using an
+        externally-managed conversation.
         """
         current_thread = thread_id or str(uuid.uuid4())[:8]
         config = {"configurable": {"thread_id": current_thread}}
@@ -642,7 +688,7 @@ class OrchestratorBot(IOrchestratorBot):
         initial_state = {
             "goal": goal,
             "mode": "auto",  # Force auto so we don't interrupt old scripts
-            "messages": [_build_user_message(goal, images)],
+            "messages": _initial_messages(goal, images, history, context),
             "session_id": current_thread,
             "run_id": run_id,
             "skills_dir": self.skills_dir,
@@ -710,8 +756,8 @@ class OrchestratorBot(IOrchestratorBot):
                 return value
         return None
 
-    def run(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None) -> BotResponse:
-        """Legacy Sync API."""
+    def run(self, goal: str, context: str = "", thread_id: str = None, images: Optional[List[str]] = None, history: Optional[List[Any]] = None) -> BotResponse:
+        """Sync wrapper around :meth:`arun` (see it for ``history``/``context``)."""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -719,7 +765,7 @@ class OrchestratorBot(IOrchestratorBot):
                 nest_asyncio.apply()
         except RuntimeError:
             pass
-        return asyncio.run(self.arun(goal, context, thread_id, images))
+        return asyncio.run(self.arun(goal, context, thread_id, images, history))
 
     def set_resume_command(self, resume_data: Any):
         from langgraph.types import Command

@@ -32,9 +32,8 @@ AWS_REGION=us-east-1
 ## Key Features
 
 - **Multi-Model Support**: Agnostic integration with OpenAI, DeepSeek, Google Gemini, and Amazon Bedrock.
-- **Conversational Agent**: Robust agent (`ReactBot`) with native tool execution and LangGraph state management.
 - **Orchestrator Agent**: Autonomous goal-driven agent (`OrchestratorBot`) with async streaming, persistent memory, LangGraph interrupts for human-in-the-loop, and rate-limit retry with progress events.
-- **Formal Interface Contracts**: `IConversationBot` and `IOrchestratorBot` ABCs ensure stable APIs across agent implementations.
+- **Formal Interface Contracts**: `IOrchestratorBot` (and `IConversationBot`) ABCs ensure stable APIs across agent implementations.
 - **Typed Stream Events**: `StatusEvent`, `PartialResponseEvent`, `AgentUpdate`, `ToolsUpdate` TypedDicts decouple consumers from implementation details.
 - **Partial/Intermediate Responses**: The orchestrator emits structured `partial_responses` when the agent produces text while continuing to call tools, enabling real-time progress feedback.
 - **Classifiers**: Text, Intent, Sentiment, Safety, and Image classification with structured outputs.
@@ -42,27 +41,6 @@ AWS_REGION=us-east-1
 - **Custom Tools**: Easy integration of custom tools via Pydantic and LangChain.
 
 ## Basic Usage
-
-### Conversational Agent with Tools
-
-```python
-import os
-from dotenv import load_dotenv
-from sonika_ai_toolkit.tools.integrations import EmailTool
-from sonika_ai_toolkit.agents.react import ReactBot
-from sonika_ai_toolkit.utilities.types import Message
-from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
-
-load_dotenv()
-
-language_model = OpenAILanguageModel(os.getenv("OPENAI_API_KEY"), model_name="gpt-4o-mini")
-bot = ReactBot(language_model, instructions="You are a helpful assistant", tools=[EmailTool()])
-
-messages = [Message(content="My name is Erley", is_bot=False)]
-response = bot.get_response("Send an email to erley@gmail.com saying hello", messages, logs=[])
-
-print(response["content"])
-```
 
 ### Autonomous Orchestrator (sync)
 
@@ -199,7 +177,6 @@ print(result.result)
 
 | Agent | Class | Interface | Use Case |
 |-------|-------|-----------|----------|
-| **ReactBot** | `agents.react.ReactBot` | `IConversationBot` | Single-turn conversation + tools |
 | **OrchestratorBot** | `agents.orchestrator.graph.OrchestratorBot` | `IOrchestratorBot` | Autonomous goal-driven agent |
 
 All agents return `BotResponse` — a `dict` subclass with typed property accessors (`.content`, `.thinking`, `.tools_executed`, `.token_usage`).
@@ -286,7 +263,6 @@ from sonika_ai_toolkit import (
 src/sonika_ai_toolkit/
 ├── agents/
 │   ├── base.py              # IBot, IConversationBot ABCs
-│   ├── react.py             # ReactBot(IConversationBot)
 │   └── orchestrator/
 │       ├── graph.py         # OrchestratorBot(IOrchestratorBot)
 │       ├── interface.py     # IOrchestratorBot ABC

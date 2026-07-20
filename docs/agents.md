@@ -1,30 +1,12 @@
 # Agents
 
-Sonika AI Toolkit provides two agent architectures for different use cases. All agents return `BotResponse` — a `dict` subclass with typed property accessors.
+Sonika AI Toolkit provides an autonomous agent architecture. All agents return `BotResponse` — a `dict` subclass with typed property accessors.
 
 ## Overview
 
 | Agent | Interface | Use Case |
 |-------|-----------|----------|
-| **ReactBot** | `IConversationBot` | Single-turn conversation + tools |
 | **OrchestratorBot** | `IOrchestratorBot` | Autonomous goal-driven agent |
-
-## ReactBot
-
-Standard ReAct loop via LangGraph. Handles tool execution, token tracking, and callback logging.
-
-```python
-from sonika_ai_toolkit.agents.react import ReactBot
-from sonika_ai_toolkit.utilities.types import Message
-from sonika_ai_toolkit.utilities.models import OpenAILanguageModel
-
-llm = OpenAILanguageModel("sk-...", model_name="gpt-4o-mini")
-bot = ReactBot(llm, instructions="You are a helpful assistant", tools=[])
-
-messages = [Message(content="My name is Erley", is_bot=False)]
-response = bot.get_response("What is my name?", messages, logs=[])
-print(response.content)
-```
 
 ## OrchestratorBot
 
@@ -218,13 +200,13 @@ the default `enable_planning=False` nothing changes — no extra tools, no new
 stream keys, and `result.plan` stays `[]`. The text-only `mode="plan"` is
 unaffected.
 
-## Graph Topology & Node Events (both bots)
+## Graph Topology & Node Events
 
-Both **ReactBot** and **OrchestratorBot** expose the graph they run and signal
-every node execution, so a UI can **draw the graph up front and animate the
-path the bot takes** through it.
+**OrchestratorBot** exposes the graph it runs and signals every node execution,
+so a UI can **draw the graph up front and animate the path the bot takes**
+through it.
 
-Three pieces, same semantics in both bots:
+Three pieces:
 
 1. **Topology** — `bot.get_graph_topology()` returns the static layout of the
    compiled graph. The same payload is also the **first stream event** of
@@ -260,7 +242,7 @@ Three pieces, same semantics in both bots:
        "output":         "text the node emitted (truncated to 500 chars)",
        "plan":           [...],   # plan node: snapshot after this run
        "step_events":    [...],   # plan node: transitions of this run
-       "questions":      [...],   # ask_user (ReactBot): questions raised
+       "questions":      [...],   # ask_user: questions raised
    }
    ```
 
@@ -269,9 +251,9 @@ Three pieces, same semantics in both bots:
    args and (truncated) output of every executed tool. Replay the signals
    over the topology to paint the steps the bot took, with their data.
 
-3. **`run_id` (process id)** — every run (`run` / `arun` / `astream_events` /
-   `get_response` / `stream_response`) gets a **globally unique id that never
-   repeats**: a UTC timestamp (microsecond precision) plus a full UUID4, e.g.
+3. **`run_id` (process id)** — every run (`run` / `arun` / `astream_events`)
+   gets a **globally unique id that never repeats**: a UTC timestamp
+   (microsecond precision) plus a full UUID4, e.g.
    `20260717T175049977691-3bf4f982c8bf4a209a9f9459e7cdaa28`. The date prefix
    makes ids sortable; the untruncated UUID4 makes collisions impossible in
    practice. The same `run_id` appears in the topology event, every node
@@ -314,25 +296,12 @@ interrupt resumes); `node_invoked` events keep the original run's `run_id`
 across resumes. The TypedDicts are `GraphTopologyEvent` and
 `NodeInvokedEvent` (importable from `sonika_ai_toolkit`).
 
-### ReactBot — `"graph"` / `"node"` stream chunks
-
-`stream_response` yields the same information as plain dict chunks:
-
-```python
-for ev in bot.stream_response(user_message, messages=[], logs=[]):
-    if ev["type"] == "graph":       # first chunk: topology + run_id
-        draw_graph(ev["nodes"], ev["edges"])
-    elif ev["type"] == "node":      # one per node execution
-        highlight_node(ev["node"])  # ev["seq"], ev["ts"], ev["run_id"]
-        print(ev["detail"])         # params/output of this node run
-```
-
 ### Non-streaming: `BotResponse.node_trace`
 
-`run` / `arun` / `get_response` return the recorded path in the response:
+`run` / `arun` return the recorded path in the response:
 
 ```python
-result = bot.get_response("usa la tool")   # or await orchestrator.arun(goal)
+result = await bot.arun(goal)
 result.run_id       # "20260717T175052294436-1375b198..."
 result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...,
                     #   "detail": {"tool_calls": [{"name": "...", "args": {...}}]}},
@@ -343,9 +312,10 @@ result.node_trace   # [{"node": "agent", "seq": 1, "ts": ..., "run_id": ...,
 
 ## Aborting a run
 
-Both bots expose `abort()` to **stop an in-flight streaming run**. It is meant
-to be called from a **different task/thread** than the one consuming the stream
-(a UI button, a websocket handler, a cancel signal) while the bot is running.
+OrchestratorBot exposes `abort()` to **stop an in-flight streaming run**. It is
+meant to be called from a **different task/thread** than the one consuming the
+stream (a UI button, a websocket handler, a cancel signal) while the bot is
+running.
 
 ```python
 # Task A — consumes the stream
@@ -359,23 +329,11 @@ async for stream_mode, payload in bot.astream_events(goal, mode="auto"):
 bot.abort()
 ```
 
-ReactBot works the same way with its sync stream (call `abort()` from another
-thread):
-
-```python
-for chunk in bot.stream_response(user_message, messages=[], logs=[]):
-    if chunk["type"] == "aborted":
-        break
-    render(chunk)
-# ...meanwhile, from another thread:  bot.abort()
-```
-
 **What happens on abort:**
 
 - The stream yields one final event and stops: `("graph", {"type": "aborted",
-  "run_id": ...})` for OrchestratorBot, `{"type": "aborted", "run_id": ...}`
-  for ReactBot. ReactBot emits **no** `done` chunk when aborted. The typed
-  contract is `AbortedEvent` (importable from `sonika_ai_toolkit`).
+  "run_id": ...})`. The typed contract is `AbortedEvent` (importable from
+  `sonika_ai_toolkit`).
 - **It genuinely halts the graph** — not just the event stream. Streaming is
   pull-driven, so breaking cancels the underlying LangGraph run; no work
   continues in the background. State up to the last completed node is preserved
@@ -423,9 +381,9 @@ result.node_trace       # List[dict]  — ordered node executions {node, seq, ts
 
 ## Structured User Questions (`ask_user`)
 
-Both **ReactBot** and **OrchestratorBot** can pause and ask the caller
-*structured* questions — instead of burying a question in free text — so a UI can
-render inputs, radio buttons, or checkboxes and send back typed answers.
+**OrchestratorBot** can pause and ask the caller *structured* questions —
+instead of burying a question in free text — so a UI can render inputs, radio
+buttons, or checkboxes and send back typed answers.
 
 The mechanism is a **signal tool** (`ask_user`): the model calls it with a
 schema-validated payload; the bot intercepts the call and surfaces the questions
@@ -444,36 +402,6 @@ from sonika_ai_toolkit import Question, QuestionOption, AskUserSchema
 #   "options":  [{"value": "r", "label": "Rojo"}, ...],  # for *_choice types
 #   "required": True,
 # }
-```
-
-### ReactBot — stateless (ends the turn, resume on the next call)
-
-```python
-from sonika_ai_toolkit.agents.react import ReactBot
-
-bot = ReactBot(
-    language_model=lm,
-    instructions="...",
-    enable_user_questions=True,   # registers the ask_user tool
-)
-
-result = bot.get_response(user_input="Quiero reservar un vuelo")
-
-if result.needs_input:
-    answers = render_and_collect(result.questions)   # your UI draws the form
-    # Feed the answers back as the next user turn (with history):
-    followup = bot.get_response(
-        user_input=f"Mis respuestas: {answers}",
-        messages=history,
-    )
-```
-
-`stream_response()` also emits a dedicated event when the agent asks:
-
-```python
-for event in bot.stream_response(user_message="...", messages=[], logs=[]):
-    if event["type"] == "questions":
-        render_and_collect(event["questions"])   # {"type","questions","reason"}
 ```
 
 ### OrchestratorBot — stateful (pauses via interrupt, resumes the *same* run)
@@ -508,21 +436,17 @@ async for stream_mode, payload in bot.astream_events(None, mode="ask", thread_id
 ```
 
 `run()` / `arun()` (non-streaming) also expose `result.questions` and
-`result.needs_input` when the model asks.
-
-> **Difference by design.** OrchestratorBot resumes without losing state (same
-> run). ReactBot is stateless, so it ends the turn and resumes on the next
-> `get_response()` call with the answers passed back as input.
+`result.needs_input` when the model asks. The interrupt keeps all context, so
+the run resumes without losing state.
 
 See [`examples/ask_user_console.py`](https://github.com/carbler/sonika-ai-toolkit/blob/main/examples/ask_user_console.py)
-for a runnable console UI that renders the questions and collects typed answers
-for both agents.
+for a runnable console UI that renders the questions and collects typed answers.
 
 ## Interface Hierarchy
 
 ```
 IBot (ABC)
-├── IConversationBot    — ReactBot
+├── IConversationBot    — stateless conversational contract
 │     get_response(user_input, messages, logs) → BotResponse
 └── IOrchestratorBot    — OrchestratorBot
       astream_events(goal, mode, thread_id) → AsyncGenerator

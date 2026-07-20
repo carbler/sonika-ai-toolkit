@@ -46,7 +46,6 @@ tests/
 │   │   ├── test_registry.py          # ToolRegistry
 │   │   └── test_synthesizer.py       # DynamicToolSynthesizer
 │   ├── agents/
-│   │   ├── test_react.py             # _InternalToolLogger + ReactBot ask_user flow
 │   │   └── orchestrator/
 │   │       ├── test_contract.py      # Interface contract (IBot / IConversationBot / IOrchestratorBot)
 │   │       ├── test_graph.py         # agent/tools graph, partial-response filtering
@@ -54,11 +53,9 @@ tests/
 │   │       └── test_memory.py        # MemoryManager (MEMORY.md / SKILLS.md / sessions)
 │   └── document_processing/
 │       └── test_processor.py         # DocumentProcessor (count_tokens, extract, chunks)
-├── integration/
-│   └── test_reactbot_flow.py         # ReactBot end-to-end (mocked LLM)
+├── integration/                      # Component-interaction tests (mocked)
 ├── e2e/                              # Real API calls — skipped when keys are missing
 │   ├── conftest.py                   # ← model configuration lives here
-│   ├── test_reactbot.py
 │   ├── test_orchestratorbot.py
 │   └── test_classifiers.py
 └── ultimate/                        # Standalone stress runners (not pytest)

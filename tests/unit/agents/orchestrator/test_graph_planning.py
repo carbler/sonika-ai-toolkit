@@ -185,7 +185,7 @@ class TestPlanningDisabled:
 
 class TestOrchestratorSkills:
 
-    def test_skill_tools_and_prompt_injected(self):
+    def test_skills_on_demand_by_default(self):
         mock_model = MagicMock()
         mock_model.bind_tools.return_value = mock_model
 
@@ -197,9 +197,25 @@ class TestOrchestratorSkills:
         )
         bot = _make_bot(mock_model, skills=[skill])
 
+        # Skill-owned tools always merge; default is on-demand: index only,
+        # plus a load_skill tool registered for on-demand body loading.
         assert bot.registry.get("facturar") is skill_tool
         assert "facturacion" in bot._skills_prompt
+        assert "Sabes generar facturas legales." not in bot._skills_prompt
+        assert bot.registry.get("load_skill") is not None
+
+    def test_skills_eager_injects_full_body(self):
+        mock_model = MagicMock()
+        mock_model.bind_tools.return_value = mock_model
+
+        skill = Skill(
+            name="facturacion",
+            instructions="Sabes generar facturas legales.",
+        )
+        bot = _make_bot(mock_model, skills=[skill], skills_eager=True)
+
         assert "Sabes generar facturas legales." in bot._skills_prompt
+        assert bot.registry.get("load_skill") is None
 
     def test_no_skills_is_noop(self):
         mock_model = MagicMock()

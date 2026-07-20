@@ -7,6 +7,7 @@ from sonika_ai_toolkit.skills import (
     Skill,
     load_skills,
     merge_skill_tools,
+    render_skills_index,
     render_skills_prompt,
     resolve_skills,
 )
@@ -119,6 +120,23 @@ class TestResolveAndRender:
         assert "haz uno" in prompt
         assert "### dos" in prompt
         assert "haz dos" in prompt
+
+    def test_render_index_empty(self):
+        assert render_skills_index([]) == ""
+
+    def test_render_index_has_names_but_not_bodies(self):
+        skills = [
+            Skill(name="uno", instructions="CUERPO_UNO detallado", description="primera"),
+            Skill(name="dos", instructions="CUERPO_DOS detallado"),
+        ]
+        index = render_skills_index(skills)
+        # Lightweight index: names + descriptions, NEVER the full instructions.
+        assert "## SKILLS" in index
+        assert "load_skill" in index
+        assert "- uno — primera" in index
+        assert "- dos" in index
+        assert "CUERPO_UNO" not in index
+        assert "CUERPO_DOS" not in index
 
 
 class TestMergeSkillTools:

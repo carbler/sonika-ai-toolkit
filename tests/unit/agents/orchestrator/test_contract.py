@@ -39,11 +39,6 @@ class TestIBotHierarchy:
         from sonika_ai_toolkit.agents.base import IBot
         assert issubclass(IOrchestratorBot, IBot)
 
-    def test_reactbot_implements_iconversationbot(self):
-        from sonika_ai_toolkit.agents.react import ReactBot
-        from sonika_ai_toolkit.agents.base import IConversationBot
-        assert issubclass(ReactBot, IConversationBot)
-
     def test_orchestratorbot_implements_iorchestrator(self):
         assert issubclass(OrchestratorBot, IOrchestratorBot)
 

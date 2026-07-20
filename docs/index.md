@@ -5,7 +5,7 @@ A robust Python library for building conversational AI agents using **LangChain*
 ## Features
 
 - **Multi-Model Support** — OpenAI, Anthropic (Claude), DeepSeek, Google Gemini, Amazon Bedrock
-- **Two Agent Architectures** — ReactBot, OrchestratorBot
+- **Autonomous Agent** — OrchestratorBot
 - **Classifiers** — Text, Intent, Sentiment, Safety, and Image classification
 - **18 Built-in Tools** — Bash, file I/O, API calls, web search, databases, and more
 - **Typed Interfaces** — `IConversationBot`, `IOrchestratorBot` ABCs with `BotResponse`
@@ -38,7 +38,7 @@ print(result.content)
 ## Next Steps
 
 - [Getting Started](getting-started.md) — Installation, API keys, first bot
-- [Agents](agents.md) — ReactBot, OrchestratorBot
+- [Agents](agents.md) — OrchestratorBot
 - [Classifiers](classifiers.md) — Text, Intent, Sentiment, Safety, Image
 - [Models](models.md) — Provider configuration and gotchas
 - [Tools](tools.md) — Built-in tools and custom tool creation

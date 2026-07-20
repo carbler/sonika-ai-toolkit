@@ -156,10 +156,9 @@ Payload from the `tools` node in `"updates"` stream mode:
 
 ### GraphTopologyEvent
 
-First event of every run, in the `"graph"` stream mode (OrchestratorBot) or as
-a `{"type": "graph"}` chunk (ReactBot) — the full graph layout, for drawing it
-before any node runs. See
-[Agents — Graph Topology & Node Events](agents.md#graph-topology-node-events-both-bots).
+First event of every run, in the `"graph"` stream mode (OrchestratorBot) — the
+full graph layout, for drawing it before any node runs. See
+[Agents — Graph Topology & Node Events](agents.md#graph-topology-node-events).
 
 ```python
 {
@@ -192,10 +191,9 @@ carries the node's params/output summary.
 ### AbortedEvent
 
 The last event of a run stopped by `bot.abort()`. Emitted as `("graph",
-payload)` by `OrchestratorBot.astream_events` and as `{"type": "aborted", ...}`
-by `ReactBot.stream_response`, right before the stream stops. State up to the
-last completed node is preserved in the checkpointer (`thread_id`); work in
-progress at the moment of abort is discarded. See
+payload)` by `OrchestratorBot.astream_events`, right before the stream stops.
+State up to the last completed node is preserved in the checkpointer
+(`thread_id`); work in progress at the moment of abort is discarded. See
 [Aborting a run](agents.md#aborting-a-run).
 
 ```python
@@ -214,7 +212,7 @@ Params/output summary inside `NodeInvokedEvent.detail` and
     "output":         "text the node emitted (truncated to 500 chars)",
     "plan":           [...],   # plan node: snapshot after this run
     "step_events":    [...],   # plan node: step transitions of this run
-    "questions":      [...],   # ask_user node (ReactBot): questions raised
+    "questions":      [...],   # ask_user node: questions raised
 }
 ```
 
