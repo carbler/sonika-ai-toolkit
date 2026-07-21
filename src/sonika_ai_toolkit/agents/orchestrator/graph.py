@@ -140,8 +140,14 @@ class OrchestratorBot(IOrchestratorBot):
         skills: Optional[List[Skill]] = None,
         skills_dir: Optional[str] = None,
         skills_eager: bool = False,
+        max_parallel_tools: int = 8,
     ):
         self.model = strong_model
+        # Max tool calls executed concurrently within a single turn (tools_node).
+        # The LLM already emits parallel tool_calls; we honor them concurrently
+        # instead of serially. Cap avoids opening dozens of connections at once;
+        # 1 reproduces the legacy sequential behavior.
+        self.max_parallel_tools = max(1, int(max_parallel_tools))
         # Model used for image (vision) turns. Falls back to the strong model so
         # existing callers keep working; pass a vision-capable model here to let
         # the orchestrator "see" images with a model of the caller's choosing.
@@ -424,37 +430,62 @@ class OrchestratorBot(IOrchestratorBot):
             }
 
         async def tools_node(state: OrchestratorState) -> Dict[str, Any]:
+            """Execute the turn's real tool calls, concurrently.
+
+            Two phases keep concurrency compatible with LangGraph interrupts:
+
+            * **Phase A (gate)** — walk the batch in order, skipping plan
+              signals, flagging unknown tools, and firing the ask-mode
+              approval ``interrupt()`` for each risky tool. This phase has NO
+              execution side effects, so LangGraph re-running the node on every
+              resume is harmless (each ``interrupt`` returns its cached answer
+              until the last one is resolved).
+            * **Phase B (execute)** — once all interrupts are settled, run every
+              approved call concurrently via ``asyncio.gather`` (bounded by
+              ``self.max_parallel_tools``). Being the only side effect and
+              running after the final resume, it executes exactly once.
+
+            Results are merged back in the batch's original order so
+            ``tools_executed`` stays deterministic.
+            """
             last_message = _last_tool_call_message(state.get("messages"))
-            results = []
-            tools_executed = []
 
             if last_message is None:
                 return {}
 
+            mode = state.get("mode", "ask")
+
+            # ── Phase A: gate (sequential, interrupt-safe, no side effects) ──
+            # Each entry: (tool_call, decision, payload) preserving batch order.
+            #   decision "run"      → payload = tool_instance (execute in phase B)
+            #   decision "message"  → payload = (ToolMessage, tools_executed|None)
+            #   decision "skip"     → payload = None (plan signal, drop silently)
+            planned: List[tuple] = []
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["args"]
 
                 # Plan signals were applied + acknowledged by plan_node.
                 if tool_name in PLAN_SIGNAL_TOOL_NAMES:
+                    planned.append((tool_call, "skip", None))
                     continue
 
                 tool_instance = self.registry.get(tool_name)
-
                 if not tool_instance:
-                    results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: Tool '{tool_name}' not found."))
+                    msg = ToolMessage(tool_call_id=tool_call["id"], content=f"Error: Tool '{tool_name}' not found.")
+                    planned.append((tool_call, "message", (msg, None)))
                     continue
 
                 risk_level = getattr(tool_instance, "risk_level", getattr(tool_instance, "risk_hint", 0))
-                
-                if state.get("mode", "ask") == "ask" and risk_level > 0:
+
+                if mode == "ask" and risk_level > 0:
                     preview_data = {}
                     if hasattr(tool_instance, "preview"):
                         try:
                             preview_data["diff"] = tool_instance.preview(tool_args)
                         except Exception:
                             pass
-                    
+
                     # Interrupción nativa de LangGraph
                     approval = interrupt({
                         "type": "permission_request",
@@ -462,46 +493,68 @@ class OrchestratorBot(IOrchestratorBot):
                         "params": tool_args,
                         **preview_data
                     })
-                    
+
                     # Use langgraph's Command object or literal bool
                     if isinstance(approval, dict) and "approved" in approval:
                         approved = approval["approved"]
                     else:
                         approved = bool(approval)
-                        
+
                     if not approved:
-                        results.append(ToolMessage(tool_call_id=tool_call["id"], content="Acción cancelada por el usuario."))
-                        tools_executed.append({
-                            "tool_name": tool_name, "args": tool_args, "status": "skipped", "output": "Rejected by user"
-                        })
+                        msg = ToolMessage(tool_call_id=tool_call["id"], content="Acción cancelada por el usuario.")
+                        rec = {"tool_name": tool_name, "args": tool_args, "status": "skipped", "output": "Rejected by user"}
+                        planned.append((tool_call, "message", (msg, rec)))
                         continue
-                        
-                # Execute tool
+
+                planned.append((tool_call, "run", tool_instance))
+
+            # ── Phase B: execute approved calls concurrently ─────────────────
+            async def _exec(tool_call, tool_instance):
+                """Run one tool, returning (ToolMessage, tools_executed record)."""
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
                 try:
-                    import asyncio
                     if hasattr(tool_instance, "ainvoke"):
                         output = await tool_instance.ainvoke(tool_args)
                     elif hasattr(tool_instance, "invoke"):
                         output = await asyncio.to_thread(tool_instance.invoke, tool_args)
                     else:
                         output = await asyncio.to_thread(tool_instance._run, **tool_args)
-                        
-                    results.append(ToolMessage(tool_call_id=tool_call["id"], content=str(output)))
-                    tools_executed.append({
-                        "tool_name": tool_name,
-                        "args": tool_args,
-                        "status": "success",
-                        "output": str(output)[:500]
-                    })
-
+                    msg = ToolMessage(tool_call_id=tool_call["id"], content=str(output))
+                    rec = {"tool_name": tool_name, "args": tool_args, "status": "success", "output": str(output)[:500]}
+                    return msg, rec
                 except Exception as e:
-                    results.append(ToolMessage(tool_call_id=tool_call["id"], content=f"Error: {e}"))
-                    tools_executed.append({
-                        "tool_name": tool_name,
-                        "args": tool_args,
-                        "status": "error",
-                        "output": str(e)
-                    })
+                    msg = ToolMessage(tool_call_id=tool_call["id"], content=f"Error: {e}")
+                    rec = {"tool_name": tool_name, "args": tool_args, "status": "error", "output": str(e)}
+                    return msg, rec
+
+            sem = asyncio.Semaphore(self.max_parallel_tools)
+
+            async def _guarded(tool_call, tool_instance):
+                async with sem:
+                    return await _exec(tool_call, tool_instance)
+
+            runnable = [(tc, inst) for tc, decision, inst in planned if decision == "run"]
+            # gather preserves input order → deterministic tools_executed.
+            outcomes = await asyncio.gather(*[_guarded(tc, inst) for tc, inst in runnable])
+            outcomes_iter = iter(outcomes)
+
+            # ── Merge results back in the batch's original order ─────────────
+            results = []
+            tools_executed = []
+            for tool_call, decision, payload in planned:
+                if decision == "skip":
+                    continue
+                if decision == "message":
+                    msg, rec = payload
+                    results.append(msg)
+                    if rec is not None:
+                        tools_executed.append(rec)
+                    continue
+                # decision == "run"
+                msg, rec = next(outcomes_iter)
+                results.append(msg)
+                tools_executed.append(rec)
 
             return {"messages": results, "tools_executed": tools_executed}
 
