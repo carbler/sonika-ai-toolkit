@@ -1,0 +1,1449 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Python library for building conversational AI agents using LangChain and LangGraph">
+      
+      
+      
+        <link rel="canonical" href="https://carbler.github.io/sonika-ai-toolkit/agents/">
+      
+      
+        <link rel="prev" href="../getting-started/">
+      
+      
+        <link rel="next" href="../classifiers/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Agents - Sonika AI Toolkit</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#agents" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Sonika AI Toolkit" class="md-header__button md-logo" aria-label="Sonika AI Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sonika AI Toolkit
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Agents
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/carbler/sonika-ai-toolkit" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sonika-ai-toolkit
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Sonika AI Toolkit" class="md-nav__button md-logo" aria-label="Sonika AI Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sonika AI Toolkit
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/carbler/sonika-ai-toolkit" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sonika-ai-toolkit
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orchestratorbot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OrchestratorBot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-graph-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Graph Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key APIs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structured-plan-step-progress-enable_planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured Plan &amp; Step Progress (enable_planning)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#graph-topology-node-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph Topology &amp; Node Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Graph Topology &amp; Node Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#orchestratorbot-the-graph-stream-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot — the "graph" stream mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-streaming-botresponsenode_trace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-streaming: BotResponse.node_trace
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aborting-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aborting a run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#botresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BotResponse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#structured-user-questions-ask_user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured User Questions (ask_user)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Structured User Questions (ask_user)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#question-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Question schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#orchestratorbot-stateful-pauses-via-interrupt-resumes-the-same-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot — stateful (pauses via interrupt, resumes the same run)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interface-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../classifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Classifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interfaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orchestratorbot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OrchestratorBot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-graph-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Graph Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key APIs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structured-plan-step-progress-enable_planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured Plan &amp; Step Progress (enable_planning)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#graph-topology-node-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph Topology &amp; Node Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Graph Topology &amp; Node Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#orchestratorbot-the-graph-stream-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot — the "graph" stream mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-streaming-botresponsenode_trace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-streaming: BotResponse.node_trace
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aborting-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aborting a run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#botresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BotResponse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#structured-user-questions-ask_user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured User Questions (ask_user)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Structured User Questions (ask_user)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#question-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Question schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#orchestratorbot-stateful-pauses-via-interrupt-resumes-the-same-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OrchestratorBot — stateful (pauses via interrupt, resumes the same run)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interface-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h1>
+<p>Sonika AI Toolkit provides an autonomous agent architecture. All agents return <code>BotResponse</code> — a <code>dict</code> subclass with typed property accessors.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Interface</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OrchestratorBot</strong></td>
+<td><code>IOrchestratorBot</code></td>
+<td>Autonomous goal-driven agent</td>
+</tr>
+</tbody>
+</table>
+<h2 id="orchestratorbot">OrchestratorBot<a class="headerlink" href="#orchestratorbot" title="Permanent link">&para;</a></h2>
+<p>Autonomous ReAct-based orchestration with persistent memory, LangGraph native interrupts, rate-limit retry with event propagation, and async-first streaming API.</p>
+<h3 id="how-the-graph-works">How the Graph Works<a class="headerlink" href="#how-the-graph-works" title="Permanent link">&para;</a></h3>
+<p>The compiled graph has <strong>two always-present nodes</strong> — <code>agent</code> and <code>tools</code> —
+wired as a loop, plus <strong>two opt-in nodes</strong> that appear when their feature is
+enabled: <code>plan</code> (with <code>enable_planning=True</code>) and <code>ask_user</code> (with
+<code>enable_user_questions=True</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>        ┌─────────┐  plan signals?   ┌─────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a> START ─▶  agent   ├─────────────────▶  plan    │ (enable_planning=True)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        └────┬────┘                  └──┬──┬──┬─┘
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>             │ ask_user?   ┌────────────┘  │  │ no real calls
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             ├─────────────▼──┐            │  └──────────► back to agent
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>             │           ask_user ◄────────┘ ask_user?
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>             │  (enable_user_ │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>             │  questions)    └──────────► back to agent (after answers)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>             │ real tool_calls    ┌─────────┐
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>             ├────────────────────▶  tools   ├──► back to agent
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>             │  no tool_calls     └─────────┘
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>             ▼
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>            END
+</code></pre></div>
+<ul>
+<li><strong><code>agent</code></strong> builds the system prompt (instructions + memory + skills +
+  mode-specific text), calls the LLM, and routes: plan-signal calls go to
+  <code>plan</code> first, an <code>ask_user</code> call goes to <code>ask_user</code>, real tool calls go to
+  <code>tools</code>, and no calls at all ends the run (text becomes <code>final_report</code>).</li>
+<li><strong><code>plan</code></strong> (opt-in) answers the <code>set_plan</code>/<code>update_step</code> signal calls with
+  acknowledgment ToolMessages and applies them to the plan snapshot; its
+  state updates stream as <code>("updates", {"plan": {...}})</code>. Real calls in the
+  same batch continue to <code>tools</code> (or <code>ask_user</code>) afterwards.</li>
+<li><strong><code>ask_user</code></strong> (opt-in) pauses via a native LangGraph interrupt and waits
+  for <code>set_resume_command()</code>. Asking wins: any real tool call in the same
+  batch is answered with a deferred ToolMessage (never executed) so the model
+  re-issues it with the user's answers in hand.</li>
+<li><strong><code>tools</code></strong> executes the real tool calls — including <code>mode="ask"</code> risk
+  interrupts — then loops back to <code>agent</code> with the results.</li>
+</ul>
+<p>With both features off the topology is exactly the classic two-node ReAct
+loop. The graph wiring is fixed and not customizable.</p>
+<h3 id="sync-usage">Sync Usage<a class="headerlink" href="#sync-usage" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sonika_ai_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrchestratorBot</span><span class="p">,</span> <span class="n">OpenAILanguageModel</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAILanguageModel</span><span class="p">(</span><span class="s2">&quot;sk-...&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">bot</span> <span class="o">=</span> <span class="n">OrchestratorBot</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">strong_model</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">fast_model</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[],</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">memory_path</span><span class="o">=</span><span class="s2">&quot;/tmp/bot_memory&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">result</span> <span class="o">=</span> <span class="n">bot</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;Summarize the latest AI news&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">tools_executed</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">token_usage</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="async-streaming">Async Streaming<a class="headerlink" href="#async-streaming" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAILanguageModel</span><span class="p">(</span><span class="s2">&quot;sk-...&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">bot</span> <span class="o">=</span> <span class="n">OrchestratorBot</span><span class="p">(</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        <span class="n">strong_model</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">fast_model</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        <span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        <span class="n">tools</span><span class="o">=</span><span class="p">[],</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>        <span class="n">memory_path</span><span class="o">=</span><span class="s2">&quot;/tmp/bot_memory&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="s2">&quot;Hello!&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>        <span class="k">if</span> <span class="n">stream_mode</span> <span class="o">==</span> <span class="s2">&quot;updates&quot;</span><span class="p">:</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>            <span class="k">for</span> <span class="n">node_name</span><span class="p">,</span> <span class="n">update</span> <span class="ow">in</span> <span class="n">payload</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>                <span class="k">if</span> <span class="n">node_name</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span><span class="p">:</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>                    <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">update</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;status_events&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>                        <span class="k">if</span> <span class="n">ev</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;retrying&quot;</span><span class="p">:</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Rate limit — retry </span><span class="si">{</span><span class="n">ev</span><span class="p">[</span><span class="s1">&#39;attempt&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, wait </span><span class="si">{</span><span class="n">ev</span><span class="p">[</span><span class="s1">&#39;wait_s&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>                    <span class="k">for</span> <span class="n">partial</span> <span class="ow">in</span> <span class="n">update</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;partial_responses&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Progress:&quot;</span><span class="p">,</span> <span class="n">partial</span><span class="p">)</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>                    <span class="k">if</span> <span class="n">update</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;final_report&quot;</span><span class="p">):</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Result:&quot;</span><span class="p">,</span> <span class="n">update</span><span class="p">[</span><span class="s2">&quot;final_report&quot;</span><span class="p">])</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</code></pre></div>
+<h3 id="modes">Modes<a class="headerlink" href="#modes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"auto"</code></td>
+<td>Executes all tools without interrupting</td>
+</tr>
+<tr>
+<td><code>"ask"</code></td>
+<td>Pauses on risky tool calls via LangGraph interrupt</td>
+</tr>
+<tr>
+<td><code>"plan"</code></td>
+<td>Forces the model to return a plan as text (no tool execution)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-apis">Key APIs<a class="headerlink" href="#key-apis" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bot.run(goal, context="")</code></td>
+<td>Synchronous execution</td>
+</tr>
+<tr>
+<td><code>await bot.arun(goal)</code></td>
+<td>Async execution</td>
+</tr>
+<tr>
+<td><code>bot.astream_events(goal, mode)</code></td>
+<td>Async streaming with interrupt support</td>
+</tr>
+<tr>
+<td><code>bot.set_resume_command(data)</code></td>
+<td>Resume after an interrupt</td>
+</tr>
+<tr>
+<td><code>bot.abort()</code></td>
+<td>Stop the in-flight <code>astream_events</code> run at the next boundary (see <a href="#aborting-a-run">Aborting a run</a>)</td>
+</tr>
+<tr>
+<td><code>await bot.a_prewarm()</code></td>
+<td>Pre-warm TCP/TLS connection</td>
+</tr>
+</tbody>
+</table>
+<h3 id="structured-plan-step-progress-enable_planning">Structured Plan &amp; Step Progress (<code>enable_planning</code>)<a class="headerlink" href="#structured-plan-step-progress-enable_planning" title="Permanent link">&para;</a></h3>
+<p><strong>When does it activate?</strong> All of the following must be true — miss any one
+and the graph behaves exactly as if planning didn't exist:</p>
+<ol>
+<li>The bot was built with <code>enable_planning=True</code> (default <code>False</code> — opt-in).
+   This is the only thing that registers the <code>set_plan</code>/<code>update_step</code> tools
+   and appends the planning protocol to the system prompt; with the default,
+   the model never even sees those tools exist.</li>
+<li>The current turn's <code>mode</code> is <strong>not</strong> <code>"plan"</code>. <code>mode="plan"</code> is a separate,
+   older, mutually-exclusive behavior (free-text plan, all tools stripped) —
+   the two never combine.</li>
+<li>The model <strong>itself decides</strong> to call <code>set_plan</code> or <code>update_step</code> — the
+   graph never forces this. A simple one-shot question typically gets no
+   plan at all, even with <code>enable_planning=True</code>, because the model judges a
+   plan unnecessary. Multi-step goals are what the protocol prompt asks the
+   model to plan for.</li>
+</ol>
+<p><strong>How it flows through the graph</strong> (via the dedicated <code>plan</code> node, added to
+the topology only when <code>enable_planning=True</code>):</p>
+<ol>
+<li><code>agent</code> runs with the planning protocol + current plan snapshot in the
+   prompt. The model calls <code>set_plan(steps=[...])</code>, alone or alongside real
+   tool calls for the first step.</li>
+<li>The router sends the batch to the <strong><code>plan</code> node</strong> first. It applies the
+   signal calls to the plan snapshot (all steps <code>"pending"</code> after <code>set_plan</code>)
+   and answers them with acknowledgment ToolMessages (so the conversation
+   stays a normal tool round-trip). Signal calls are <strong>excluded from
+   <code>tools_executed</code></strong> — they performed no real action.</li>
+<li>From <code>plan</code>, any real tool calls in the same batch continue to <code>tools</code>
+   (or <code>ask_user</code>); with none, the flow returns straight to <code>agent</code>.</li>
+<li>Back in <code>agent</code>, the updated plan snapshot renders into the prompt so the
+   model sees step 1 is already registered and doesn't re-announce it. The
+   model now calls <code>update_step(1, "running")</code> alongside the real tool(s) for
+   that step, then later <code>update_step(1, "done")</code>, then moves to step 2, and
+   so on until all steps are done and the model returns final text with no
+   more tool calls — ending the run at <code>agent</code> as usual.</li>
+</ol>
+<p>Each plan-node run surfaces through the <code>"updates"</code> stream <strong>under the
+<code>"plan"</code> node name</strong> (and as <code>"plan"</code> node events in the <code>"graph"</code> stream):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">bot</span> <span class="o">=</span> <span class="n">OrchestratorBot</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">enable_planning</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="n">goal</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">if</span> <span class="n">stream_mode</span> <span class="o">==</span> <span class="s2">&quot;updates&quot;</span><span class="p">:</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="k">for</span> <span class="n">node</span><span class="p">,</span> <span class="n">update</span> <span class="ow">in</span> <span class="n">payload</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>            <span class="k">if</span> <span class="n">node</span> <span class="o">==</span> <span class="s2">&quot;plan&quot;</span><span class="p">:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>                <span class="k">if</span> <span class="n">update</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;plan&quot;</span><span class="p">):</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>                    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">update</span><span class="p">[</span><span class="s2">&quot;plan&quot;</span><span class="p">]:</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">. [</span><span class="si">{</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">] </span><span class="si">{</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;description&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>                <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">update</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;step_events&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Paso </span><span class="si">{</span><span class="n">ev</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1"> → </span><span class="si">{</span><span class="n">ev</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Stream shape:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;agent&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}})</span>              <span class="c1"># model called set_plan</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">[</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="p">{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Buscar datos&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;pending&quot;</span><span class="p">},</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="p">{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Generar reporte&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;pending&quot;</span><span class="p">},</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">]}})</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;agent&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}})</span>              <span class="c1"># model called update_step + real tool</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="s2">&quot;step_events&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;running&quot;</span><span class="p">}]}})</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}})</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;plan&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="s2">&quot;step_events&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;done&quot;</span><span class="p">}]}})</span>
+</code></pre></div>
+<blockquote>
+<p>Migration note: in releases up to v0.3.14 the plan snapshot and step events
+streamed under the <code>"agent"</code> update. They now stream under the dedicated
+<code>"plan"</code> node.</p>
+</blockquote>
+<p>Non-streaming callers get the final snapshot in <code>result.plan</code> (from
+<code>run</code>/<code>arun</code>), with each step's final status. The feature is <strong>opt-in</strong>: with
+the default <code>enable_planning=False</code> nothing changes — no extra tools, no new
+stream keys, and <code>result.plan</code> stays <code>[]</code>. The text-only <code>mode="plan"</code> is
+unaffected.</p>
+<h2 id="graph-topology-node-events">Graph Topology &amp; Node Events<a class="headerlink" href="#graph-topology-node-events" title="Permanent link">&para;</a></h2>
+<p><strong>OrchestratorBot</strong> exposes the graph it runs and signals every node execution,
+so a UI can <strong>draw the graph up front and animate the path the bot takes</strong>
+through it.</p>
+<p>Three pieces:</p>
+<ol>
+<li><strong>Topology</strong> — <code>bot.get_graph_topology()</code> returns the static layout of the
+   compiled graph. The same payload is also the <strong>first stream event</strong> of
+   every run:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s2">&quot;entry&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span>                       <span class="c1"># first real node executed</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="s2">&quot;nodes&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;__start__&quot;</span><span class="p">,</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="s2">&quot;__end__&quot;</span><span class="p">],</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="s2">&quot;edges&quot;</span><span class="p">:</span> <span class="p">[</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;__start__&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;conditional&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="s2">&quot;conditional&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;__end__&quot;</span><span class="p">,</span> <span class="s2">&quot;conditional&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;conditional&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="p">],</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>conditional: True</code> marks edges taken via a router (the agent's
+   tool-calls decision). <code>plan</code> (<code>enable_planning=True</code>) and
+   <code>ask_user</code> (<code>enable_user_questions=True</code>) appear as regular nodes.</p>
+<ol>
+<li><strong>Node signals</strong> — one event per node execution, in order, each carrying
+   the node name, a 1-based <code>seq</code>, an epoch <code>ts</code>, the run's <code>run_id</code>, and a
+   <strong><code>detail</code></strong> payload with the node's params and output
+   (<code>NodeDetail</code>, all keys optional):</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="s2">&quot;tool_calls&quot;</span><span class="p">:</span>     <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;get_datetime&quot;</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tz&quot;</span><span class="p">:</span> <span class="s2">&quot;local&quot;</span><span class="p">}}],</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="s2">&quot;tools_executed&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;tool_name&quot;</span><span class="p">:</span> <span class="s2">&quot;get_datetime&quot;</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">},</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>                        <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;success&quot;</span><span class="p">,</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span> <span class="s2">&quot;14:44&quot;</span><span class="p">}],</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="s2">&quot;output&quot;</span><span class="p">:</span>         <span class="s2">&quot;text the node emitted (truncated to 500 chars)&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="s2">&quot;plan&quot;</span><span class="p">:</span>           <span class="p">[</span><span class="o">...</span><span class="p">],</span>   <span class="c1"># plan node: snapshot after this run</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="s2">&quot;step_events&quot;</span><span class="p">:</span>    <span class="p">[</span><span class="o">...</span><span class="p">],</span>   <span class="c1"># plan node: transitions of this run</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="s2">&quot;questions&quot;</span><span class="p">:</span>      <span class="p">[</span><span class="o">...</span><span class="p">],</span>   <span class="c1"># ask_user: questions raised</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">}</span>
+</code></pre></div>
+<p>For <code>agent</code>, <code>tool_calls</code> are the tools it <em>requested</em> (with args) and
+   <code>output</code> the text it emitted; for <code>tools</code>, <code>tools_executed</code> carries the
+   args and (truncated) output of every executed tool. Replay the signals
+   over the topology to paint the steps the bot took, with their data.</p>
+<ol>
+<li><strong><code>run_id</code> (process id)</strong> — every run (<code>run</code> / <code>arun</code> / <code>astream_events</code>)
+   gets a <strong>globally unique id that never repeats</strong>: a UTC timestamp
+   (microsecond precision) plus a full UUID4, e.g.
+   <code>20260717T175049977691-3bf4f982c8bf4a209a9f9459e7cdaa28</code>. The date prefix
+   makes ids sortable; the untruncated UUID4 makes collisions impossible in
+   practice. The same <code>run_id</code> appears in the topology event, every node
+   signal, and the final <code>BotResponse</code>.</li>
+</ol>
+<h3 id="orchestratorbot-the-graph-stream-mode">OrchestratorBot — the <code>"graph"</code> stream mode<a class="headerlink" href="#orchestratorbot-the-graph-stream-mode" title="Permanent link">&para;</a></h3>
+<p><code>astream_events</code> yields a third stream mode alongside <code>"messages"</code> and
+<code>"updates"</code> (existing consumers that filter by mode are unaffected):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="n">goal</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="k">if</span> <span class="n">stream_mode</span> <span class="o">==</span> <span class="s2">&quot;graph&quot;</span><span class="p">:</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>        <span class="k">if</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;graph_topology&quot;</span><span class="p">:</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>            <span class="n">draw_graph</span><span class="p">(</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;nodes&quot;</span><span class="p">],</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;edges&quot;</span><span class="p">])</span>   <span class="c1"># first event</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="k">elif</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;node_invoked&quot;</span><span class="p">:</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>            <span class="n">highlight_node</span><span class="p">(</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;node&quot;</span><span class="p">])</span>                  <span class="c1"># animate the step</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;#</span><span class="si">{</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;seq&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;node&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;detail&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Stream shape of a run that uses one tool:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">(</span><span class="s2">&quot;graph&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;graph_topology&quot;</span><span class="p">,</span> <span class="s2">&quot;run_id&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;entry&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>           <span class="s2">&quot;nodes&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="s2">&quot;edges&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">]})</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="p">(</span><span class="s2">&quot;graph&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;node_invoked&quot;</span><span class="p">,</span> <span class="s2">&quot;run_id&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;node&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;seq&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>           <span class="s2">&quot;detail&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tool_calls&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;get_datetime&quot;</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}}]}})</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;agent&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}})</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">(</span><span class="s2">&quot;graph&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;node_invoked&quot;</span><span class="p">,</span> <span class="s2">&quot;run_id&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;node&quot;</span><span class="p">:</span> <span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="s2">&quot;seq&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>           <span class="s2">&quot;detail&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tools_executed&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;tool_name&quot;</span><span class="p">:</span> <span class="s2">&quot;get_datetime&quot;</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">},</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>                                          <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;success&quot;</span><span class="p">,</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span> <span class="s2">&quot;14:44&quot;</span><span class="p">}]}})</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}})</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">(</span><span class="s2">&quot;graph&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;node_invoked&quot;</span><span class="p">,</span> <span class="s2">&quot;run_id&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;node&quot;</span><span class="p">:</span> <span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="s2">&quot;seq&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>           <span class="s2">&quot;detail&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;output&quot;</span><span class="p">:</span> <span class="s2">&quot;La hora actual es 14:44.&quot;</span><span class="p">}})</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="p">(</span><span class="s2">&quot;updates&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;agent&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;final_report&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">}})</span>
+</code></pre></div>
+<p>The topology event is emitted only when a <code>goal</code> starts a new run (not on
+interrupt resumes); <code>node_invoked</code> events keep the original run's <code>run_id</code>
+across resumes. The TypedDicts are <code>GraphTopologyEvent</code> and
+<code>NodeInvokedEvent</code> (importable from <code>sonika_ai_toolkit</code>).</p>
+<h3 id="non-streaming-botresponsenode_trace">Non-streaming: <code>BotResponse.node_trace</code><a class="headerlink" href="#non-streaming-botresponsenode_trace" title="Permanent link">&para;</a></h3>
+<p><code>run</code> / <code>arun</code> return the recorded path in the response:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">bot</span><span class="o">.</span><span class="n">arun</span><span class="p">(</span><span class="n">goal</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">result</span><span class="o">.</span><span class="n">run_id</span>       <span class="c1"># &quot;20260717T175052294436-1375b198...&quot;</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">result</span><span class="o">.</span><span class="n">node_trace</span>   <span class="c1"># [{&quot;node&quot;: &quot;agent&quot;, &quot;seq&quot;: 1, &quot;ts&quot;: ..., &quot;run_id&quot;: ...,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>                    <span class="c1">#   &quot;detail&quot;: {&quot;tool_calls&quot;: [{&quot;name&quot;: &quot;...&quot;, &quot;args&quot;: {...}}]}},</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>                    <span class="c1">#  {&quot;node&quot;: &quot;tools&quot;, &quot;seq&quot;: 2, ...,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>                    <span class="c1">#   &quot;detail&quot;: {&quot;tools_executed&quot;: [{..., &quot;output&quot;: &quot;...&quot;}]}},</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>                    <span class="c1">#  {&quot;node&quot;: &quot;agent&quot;, &quot;seq&quot;: 3, ..., &quot;detail&quot;: {&quot;output&quot;: &quot;...&quot;}}]</span>
+</code></pre></div>
+<h2 id="aborting-a-run">Aborting a run<a class="headerlink" href="#aborting-a-run" title="Permanent link">&para;</a></h2>
+<p>OrchestratorBot exposes <code>abort()</code> to <strong>stop an in-flight streaming run</strong>. It is
+meant to be called from a <strong>different task/thread</strong> than the one consuming the
+stream (a UI button, a websocket handler, a cancel signal) while the bot is
+running.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Task A — consumes the stream</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="n">goal</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">if</span> <span class="n">stream_mode</span> <span class="o">==</span> <span class="s2">&quot;graph&quot;</span> <span class="ow">and</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;aborted&quot;</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Run stopped by the user&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="k">break</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">render</span><span class="p">(</span><span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span><span class="p">)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="c1"># Task B — the library user, at any moment</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">bot</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span>
+</code></pre></div>
+<p><strong>What happens on abort:</strong></p>
+<ul>
+<li>The stream yields one final event and stops: <code>("graph", {"type": "aborted",
+  "run_id": ...})</code>. The typed contract is <code>AbortedEvent</code> (importable from
+  <code>sonika_ai_toolkit</code>).</li>
+<li><strong>It genuinely halts the graph</strong> — not just the event stream. Streaming is
+  pull-driven, so breaking cancels the underlying LangGraph run; no work
+  continues in the background. State up to the last completed node is preserved
+  in the checkpointer under the run's <code>thread_id</code>.</li>
+<li>The abort flag is <strong>reset at the start of every run</strong>, so the bot is
+  immediately reusable.</li>
+</ul>
+<p><strong>Granularity — the one thing to know:</strong> a node that is already running is not
+cancelled mid-execution; the abort applies at the <strong>next boundary</strong>.</p>
+<ul>
+<li>Aborting while the <code>agent</code> is reasoning takes effect almost immediately — the
+  stream yields on every LLM token, so the check runs constantly.</li>
+<li>Aborting while a <strong>tool is executing</strong> only applies once that tool returns (a
+  running node cannot be killed halfway).</li>
+</ul>
+<p><strong>Not affected:</strong> the non-streaming <code>run</code> / <code>arun</code> / <code>get_response</code> paths use
+<code>ainvoke</code> and do not observe the flag — cancel their asyncio task to stop them.</p>
+<h2 id="botresponse">BotResponse<a class="headerlink" href="#botresponse" title="Permanent link">&para;</a></h2>
+<p>All agents return <code>BotResponse</code>, a <code>dict</code> subclass with typed properties:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">bot</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># Dict-style access (backward compatible)</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">result</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">]</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;thinking&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="c1"># Property-style access (typed)</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="n">result</span><span class="o">.</span><span class="n">content</span>          <span class="c1"># str</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="n">result</span><span class="o">.</span><span class="n">thinking</span>         <span class="c1"># Optional[str]</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="n">result</span><span class="o">.</span><span class="n">logs</span>             <span class="c1"># List[str]</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="n">result</span><span class="o">.</span><span class="n">tools_executed</span>   <span class="c1"># List[dict]</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="n">result</span><span class="o">.</span><span class="n">token_usage</span>      <span class="c1"># {prompt_tokens, completion_tokens, total_tokens}</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="n">result</span><span class="o">.</span><span class="n">success</span>          <span class="c1"># bool</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="n">result</span><span class="o">.</span><span class="n">plan</span>             <span class="c1"># List[dict]</span>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="n">result</span><span class="o">.</span><span class="n">session_id</span>       <span class="c1"># Optional[str]</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="n">result</span><span class="o">.</span><span class="n">goal</span>             <span class="c1"># Optional[str]</span>
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="n">result</span><span class="o">.</span><span class="n">questions</span>        <span class="c1"># List[dict]  — structured questions the agent asks</span>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="n">result</span><span class="o">.</span><span class="n">needs_input</span>      <span class="c1"># bool        — True when waiting for answers</span>
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="n">result</span><span class="o">.</span><span class="n">run_id</span>           <span class="c1"># Optional[str] — unique process id (never repeats)</span>
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="n">result</span><span class="o">.</span><span class="n">node_trace</span>       <span class="c1"># List[dict]  — ordered node executions {node, seq, ts, run_id}</span>
+</code></pre></div>
+<h2 id="structured-user-questions-ask_user">Structured User Questions (<code>ask_user</code>)<a class="headerlink" href="#structured-user-questions-ask_user" title="Permanent link">&para;</a></h2>
+<p><strong>OrchestratorBot</strong> can pause and ask the caller <em>structured</em> questions —
+instead of burying a question in free text — so a UI can render inputs, radio
+buttons, or checkboxes and send back typed answers.</p>
+<p>The mechanism is a <strong>signal tool</strong> (<code>ask_user</code>): the model calls it with a
+schema-validated payload; the bot intercepts the call and surfaces the questions
+rather than executing an action. Enable it with <code>enable_user_questions=True</code>.</p>
+<h3 id="question-schema">Question schema<a class="headerlink" href="#question-schema" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sonika_ai_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">Question</span><span class="p">,</span> <span class="n">QuestionOption</span><span class="p">,</span> <span class="n">AskUserSchema</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># Each question the model emits:</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># {</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1">#   &quot;id&quot;:       &quot;color&quot;,                 # stable key; answers are keyed by it</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="c1">#   &quot;text&quot;:     &quot;¿Qué color prefieres?&quot;,</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1">#   &quot;type&quot;:     &quot;single_choice&quot;,         # text | single_choice | multi_choice | boolean | number</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="c1">#   &quot;options&quot;:  [{&quot;value&quot;: &quot;r&quot;, &quot;label&quot;: &quot;Rojo&quot;}, ...],  # for *_choice types</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="c1">#   &quot;required&quot;: True,</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="c1"># }</span>
+</code></pre></div>
+<h3 id="orchestratorbot-stateful-pauses-via-interrupt-resumes-the-same-run">OrchestratorBot — stateful (pauses via interrupt, resumes the <em>same</em> run)<a class="headerlink" href="#orchestratorbot-stateful-pauses-via-interrupt-resumes-the-same-run" title="Permanent link">&para;</a></h3>
+<p>With <code>enable_user_questions=True</code> the questions run through a <strong>dedicated
+<code>ask_user</code> graph node</strong> (visible in the topology and in the <code>"graph"</code> node
+events). It fires a native LangGraph interrupt, so the run keeps all context
+and continues where it left off once you provide the answers. Asking wins
+over other tool calls in the same batch: those are answered with a deferred
+ToolMessage (never executed) and the model re-issues them after the answers
+arrive.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sonika_ai_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrchestratorBot</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="n">bot</span> <span class="o">=</span> <span class="n">OrchestratorBot</span><span class="p">(</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">strong_model</span><span class="o">=</span><span class="n">lm</span><span class="p">,</span> <span class="n">fast_model</span><span class="o">=</span><span class="n">lm</span><span class="p">,</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="n">enable_user_questions</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="p">)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="n">goal</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;ask&quot;</span><span class="p">,</span> <span class="n">thread_id</span><span class="o">=</span><span class="s2">&quot;t1&quot;</span><span class="p">):</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    <span class="k">if</span> <span class="n">stream_mode</span> <span class="o">==</span> <span class="s2">&quot;updates&quot;</span> <span class="ow">and</span> <span class="s2">&quot;__interrupt__&quot;</span> <span class="ow">in</span> <span class="n">payload</span><span class="p">:</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>        <span class="n">interrupt</span> <span class="o">=</span> <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;__interrupt__&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>       <span class="c1"># QuestionEvent</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>        <span class="k">if</span> <span class="n">interrupt</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;question_request&quot;</span><span class="p">:</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>            <span class="n">answers</span> <span class="o">=</span> <span class="n">render_and_collect</span><span class="p">(</span><span class="n">interrupt</span><span class="p">[</span><span class="s2">&quot;questions&quot;</span><span class="p">])</span>   <span class="c1"># {id: answer}</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>            <span class="n">bot</span><span class="o">.</span><span class="n">set_resume_command</span><span class="p">(</span><span class="n">answers</span><span class="p">)</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="c1"># Resume the same run — the model now has the answers in context:</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="k">async</span> <span class="k">for</span> <span class="n">stream_mode</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="n">bot</span><span class="o">.</span><span class="n">astream_events</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;ask&quot;</span><span class="p">,</span> <span class="n">thread_id</span><span class="o">=</span><span class="s2">&quot;t1&quot;</span><span class="p">):</span>
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>    <span class="o">...</span>
+</code></pre></div>
+<p><code>run()</code> / <code>arun()</code> (non-streaming) also expose <code>result.questions</code> and
+<code>result.needs_input</code> when the model asks. The interrupt keeps all context, so
+the run resumes without losing state.</p>
+<p>See <a href="https://github.com/carbler/sonika-ai-toolkit/blob/main/examples/ask_user_console.py"><code>examples/ask_user_console.py</code></a>
+for a runnable console UI that renders the questions and collects typed answers.</p>
+<h2 id="interface-hierarchy">Interface Hierarchy<a class="headerlink" href="#interface-hierarchy" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>IBot (ABC)
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>├── IConversationBot    — stateless conversational contract
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>│     get_response(user_input, messages, logs) → BotResponse
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>└── IOrchestratorBot    — OrchestratorBot
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>      astream_events(goal, mode, thread_id) → AsyncGenerator
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>      arun(goal, context, thread_id) → BotResponse
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>      run(goal, context, thread_id) → BotResponse
+</code></pre></div>
+<p>Type-hint against interfaces, not concrete classes:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sonika_ai_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">IConversationBot</span><span class="p">,</span> <span class="n">IOrchestratorBot</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.expand"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
